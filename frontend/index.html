@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Prism — презентации с помощью нейросети</title>
+  <meta name="description" content="Prism создаёт готовые презентации из одного описания: текст, визуал и вёрстка — за 40 секунд.">
+  <meta name="theme-color" content="#080b16">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700;900&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <!-- ══════════ Фон: тёмная база, световая полоса, цветные блики, зерно ══════════ -->
+  <div class="bg" aria-hidden="true">
+    <div class="bg__band"></div>
+    <div class="bg__orb bg__orb--a"></div>
+    <div class="bg__orb bg__orb--b"></div>
+    <div class="bg__orb bg__orb--c"></div>
+    <div class="bg__grain"></div>
+  </div>
+
+  <!-- ══════════ Шапка ══════════ -->
+  <header class="nav">
+    <a class="nav__logo glass" href="#" aria-label="Prism — на главную">
+      <span class="nav__logo-dot"></span>
+    </a>
+
+    <nav class="nav__pill glass" aria-label="Разделы">
+      <span class="nav__brand">Prism</span>
+      <a href="#" data-goto="1">Как работает</a>
+      <a href="#" data-goto="2">Возможности</a>
+      <a href="#" data-goto="3">Шаблоны</a>
+      <a href="#" data-goto="4">Тарифы</a>
+      <a href="#" class="nav__cta" data-goto="5">Попробовать</a>
+    </nav>
+
+    <a class="nav__user glass" href="#" aria-label="Войти">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+        <circle cx="12" cy="8.5" r="3.6"/>
+        <path d="M4.5 20c1.3-3.6 4.1-5.4 7.5-5.4s6.2 1.8 7.5 5.4"/>
+      </svg>
+    </a>
+  </header>
+
+  <!-- ══════════ Сцена: заголовок + колода карточек ══════════
+       Каждая <article class="card"> — один «слайд» сайта.
+       data-title — большой заголовок над колодой, сам текст — внутри панелей.
+       Чтобы добавить слайд, просто добавьте ещё один <article class="card">:
+       прокрутка, точки навигации и заголовки подхватятся автоматически.
+       Ссылки в шапке ведут на слайд по индексу (data-goto="0…N-1"). -->
+  <main class="stage" id="stage">
+    <div class="titles" id="titles" aria-live="polite"></div>
+
+    <div class="deck-wrap">
+      <div class="deck" id="deck">
+
+        <!-- ── Карта 1: Начнём ── -->
+        <article class="card" data-title="Начнем">
+          <section class="panel panel--input">
+            <span class="eyebrow">Тема презентации</span>
+            <p class="prompt">Запуск сервиса доставки еды в&nbsp;Казани: питч для инвесторов<span class="caret"></span></p>
+            <span class="hint">⌘ + Enter — сгенерировать</span>
+          </section>
+
+          <section class="panel panel--settings">
+            <div class="chips">
+              <span class="chip">12 слайдов</span>
+              <span class="chip">Деловой стиль</span>
+              <span class="chip">Русский</span>
+              <span class="chip chip--ghost">+</span>
+            </div>
+            <button class="btn btn--primary" type="button">
+              Сгенерировать
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+            </button>
+          </section>
+
+          <section class="panel panel--big panel--preview">
+            <div class="preview">
+              <div class="preview__slide">
+                <span class="preview__label">Слайд 01 / 12</span>
+                <div class="preview__title"></div>
+                <div class="preview__title preview__title--short"></div>
+                <div class="preview__row">
+                  <div class="preview__img"></div>
+                  <div class="preview__lines">
+                    <i></i><i></i><i></i><i></i>
+                  </div>
+                </div>
+              </div>
+              <div class="progress">
+                <span class="progress__text">Генерация · подбираем визуал</span>
+                <span class="progress__bar"><i></i></span>
+              </div>
+            </div>
+          </section>
+        </article>
+
+        <!-- ── Карта 2: Как это работает ── -->
+        <article class="card" data-title="Как это работает">
+          <section class="panel">
+            <span class="num">01</span>
+            <h3>Опишите идею</h3>
+            <p>Одно предложение, тезисы или целый документ — нейросеть поймёт контекст и предложит структуру.</p>
+          </section>
+
+          <section class="panel">
+            <span class="num">02</span>
+            <h3>Выберите стиль</h3>
+            <p>40+ дизайн-систем. Шрифты, палитры и сетки подбираются под тему автоматически.</p>
+          </section>
+
+          <section class="panel panel--big">
+            <span class="num">03</span>
+            <h3>Получите готовые слайды</h3>
+            <p>Текст, иллюстрации, графики и заметки спикера. Экспорт в PPTX, PDF и Keynote одним нажатием.</p>
+            <div class="thumbs">
+              <i class="thumb thumb--1"></i><i class="thumb thumb--2"></i><i class="thumb thumb--3"></i>
+              <i class="thumb thumb--4"></i><i class="thumb thumb--5"></i><i class="thumb thumb--6"></i>
+            </div>
+          </section>
+        </article>
+
+        <!-- ── Карта 3: Возможности ── -->
+        <article class="card" data-title="Возможности">
+          <section class="panel">
+            <span class="icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6h16M4 12h10M4 18h13"/></svg>
+            </span>
+            <h3>Текст</h3>
+            <p>Структура, тезисы, заголовки и заметки спикера в нужном тоне — от строгого до дерзкого.</p>
+          </section>
+
+          <section class="panel">
+            <span class="icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="10" r="1.6"/><path d="M21 16l-5-5-8 8"/></svg>
+            </span>
+            <h3>Визуал</h3>
+            <p>Генерация изображений, иконок и диаграмм в едином стиле презентации.</p>
+          </section>
+
+          <section class="panel panel--big">
+            <span class="icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg>
+            </span>
+            <h3>Умная вёрстка</h3>
+            <p>Сетки, отступы и типографика выравниваются сами. Вы правите текст — дизайн не ломается.</p>
+            <ul class="checks">
+              <li>Фирменные цвета и логотип</li>
+              <li>Автоматические графики из таблиц</li>
+              <li>Перевод на 30 языков</li>
+              <li>Совместное редактирование</li>
+            </ul>
+          </section>
+        </article>
+
+        <!-- ── Карта 4: Шаблоны ── -->
+        <article class="card" data-title="Шаблоны">
+          <section class="panel panel--tpl panel--tpl-a">
+            <h3>Питч для инвесторов</h3>
+            <p>Проблема, решение, рынок, команда, финансы — 12 слайдов по проверенной структуре.</p>
+          </section>
+
+          <section class="panel panel--tpl panel--tpl-b">
+            <h3>Лекция и обучение</h3>
+            <p>Понятные схемы, примеры и вопросы для аудитории в конце каждого блока.</p>
+          </section>
+
+          <section class="panel panel--big">
+            <h3>Ещё 40 сценариев</h3>
+            <div class="gallery">
+              <figure class="tile tile--1"><figcaption>Отчёт</figcaption></figure>
+              <figure class="tile tile--2"><figcaption>Продукт</figcaption></figure>
+              <figure class="tile tile--3"><figcaption>Портфолио</figcaption></figure>
+              <figure class="tile tile--4"><figcaption>Стратегия</figcaption></figure>
+              <figure class="tile tile--5"><figcaption>Конференция</figcaption></figure>
+              <figure class="tile tile--6"><figcaption>Резюме</figcaption></figure>
+            </div>
+          </section>
+        </article>
+
+        <!-- ── Карта 5: Тарифы ── -->
+        <article class="card" data-title="Тарифы">
+          <section class="panel">
+            <span class="eyebrow">Free</span>
+            <div class="price">0 ₽</div>
+            <p>3 презентации в месяц, базовые стили, экспорт в PDF.</p>
+          </section>
+
+          <section class="panel">
+            <span class="eyebrow">Pro</span>
+            <div class="price">990 ₽<small>/мес</small></div>
+            <p>Безлимит, все стили, экспорт в PPTX и Keynote, свой брендинг.</p>
+          </section>
+
+          <section class="panel panel--big panel--featured">
+            <span class="eyebrow">Team</span>
+            <div class="price">2 490 ₽<small>/мес</small></div>
+            <p>Совместная работа, общая библиотека стилей, права доступа и SSO. До 10 участников.</p>
+            <ul class="checks">
+              <li>Общие шаблоны команды</li>
+              <li>Комментарии и версии</li>
+              <li>Приоритетная генерация</li>
+            </ul>
+            <button class="btn btn--primary" type="button">Выбрать Team</button>
+          </section>
+        </article>
+
+        <!-- ── Карта 6: Попробовать ── -->
+        <article class="card" data-title="Попробовать">
+          <section class="panel">
+            <h3>Без карты</h3>
+            <p>Три презентации бесплатно — регистрация занимает 20 секунд.</p>
+          </section>
+
+          <section class="panel">
+            <h3>Экспорт куда угодно</h3>
+            <div class="chips chips--wrap">
+              <span class="chip">PPTX</span><span class="chip">PDF</span><span class="chip">Keynote</span><span class="chip">Google Slides</span>
+            </div>
+          </section>
+
+          <section class="panel panel--big panel--cta">
+            <h3 class="cta-title">Создайте первую презентацию прямо сейчас</h3>
+            <form class="cta-form" onsubmit="return false">
+              <input class="input" type="email" placeholder="you@company.ru" aria-label="Электронная почта">
+              <button class="btn btn--primary" type="submit">Начать</button>
+            </form>
+            <p class="fine">Нажимая «Начать», вы соглашаетесь с условиями сервиса.</p>
+          </section>
+        </article>
+
+      </div>
+    </div>
+
+    <div class="scroll-hint" id="scrollHint" aria-hidden="true">
+      <span>Листайте</span>
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+    </div>
+  </main>
+
+  <!-- Навигация по карточкам (справа) -->
+  <nav class="rail glass" id="rail" aria-label="Карточки"></nav>
+
+  <!-- Невидимый «трек» прокрутки: по одному экрану на карточку -->
+  <div class="track" id="track" aria-hidden="true"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
