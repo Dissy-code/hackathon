@@ -1,0 +1,48 @@
+# Основной конфиг сервиса. Значения ${VAR} / ${VAR:-default} берутся из окружения (backend/.env).
+# Активный профиль: PRISM_PROFILE (dev | final) или --profile у CLI.
+
+profile: ${PRISM_PROFILE:-dev}
+
+providers:
+  owui:                       # Open WebUI, OpenAI-совместимый /api/chat/completions
+    base_url: ${OWUI_BASE_URL}
+    api_key: ${OWUI_API_KEY}
+    timeout_s: 180
+    max_retries: 2
+  vk:                         # инференс VK для финала (заполняется позже)
+    base_url: ${VK_LLM_BASE_URL:-}
+    api_key: ${VK_LLM_API_KEY:-}
+    timeout_s: 180
+    max_retries: 2
+
+profiles:
+  dev:
+    models:
+      text:   { provider: owui, name: ornith-1.5-35b-a3b }
+      vision: { provider: owui, name: ornith-1.5-35b-a3b }   # мультимодальная, отдельная VLM не нужна
+  final:
+    models:
+      text:   { provider: vk, name: qwen3.8-27b }
+      vision: { provider: vk, name: qwen3.8-27b }            # уточнить, есть ли у модели vision
+
+# Параметры по умолчанию — рекомендации из карточки Ornith-1.5 для general tasks.
+role_defaults:
+  temperature: 0.6
+  top_p: 0.95
+  top_k: 20
+  think: false
+  max_tokens: 4096
+
+# Узлы графа ссылаются только на роли; какая модель за ролью — решает профиль.
+roles:
+  outline_planner: { model: text,   think: true, max_tokens: 12000 }
+  slide_writer:    { model: text,   temperature: 0.5 }
+  shorten:         { model: text,   temperature: 0.3, max_tokens: 1024 }
+  fix_agent:       { model: text,   temperature: 0.3 }
+  research:        { model: text,   temperature: 0.3 }
+  template_classifier: { model: text, temperature: 0.2, max_tokens: 8192 }
+  layout_classify: { model: vision, temperature: 0.2 }
+  audit_vlm:       { model: vision, temperature: 0.2 }
+
+# Закреплённые версии скиллов (skills/<name>/v<N>.yaml). Не указан — берётся последняя.
+skills: {}

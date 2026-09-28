@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Конфигуратор · ЦДС</title>
+  <meta name="description" content="Опиши задачу, приложи шаблоны и картинки — и забери готовую презентацию.">
+  <meta name="theme-color" content="#000000">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@600;900&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="configurator.css">
+</head>
+<body>
+
+  <!-- Конфигуратор: три состояния одного окна — редактор, генерация, показ.
+       Раскладка снята с Состояние_1…3.psd (3779×2124): вся страница живёт
+       в координатах композиции 750×422 и масштабируется под окно, как на
+       главной. Логика — в configurator.js. -->
+  <div class="stage" id="stage">
+
+    <!-- живая сетка — фон страницы, как на главной -->
+    <canvas class="gridc" id="vortex" aria-hidden="true"></canvas>
+
+    <div class="scene" id="scene">
+
+      <header class="top">
+        <a class="logo" href="index.html" aria-label="На главную">ЦДС</a>
+
+        <nav class="nav glass" id="nav" aria-label="Режимы">
+          <i class="nav__lens" id="navLens" aria-hidden="true"></i>
+          <button class="nav__item is-active" type="button" data-view="edit">Редактор</button>
+          <button class="nav__item" type="button" data-view="show">Демонстрация</button>
+        </nav>
+
+        <button class="avatar" id="avatar" type="button" aria-label="Аккаунт"
+                aria-expanded="false" aria-controls="accMenu">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round">
+            <circle cx="12" cy="8.6" r="3.6"/><path d="M4.6 20c1.3-3.6 4-5.4 7.4-5.4s6.1 1.8 7.4 5.4"/>
+          </svg>
+        </button>
+      </header>
+
+      <!-- ══ Аккаунт ══
+           Как на главной: кружок иконки и тело панели лежат в одном слое под
+           фильтром #gooGlass и слипаются в одну каплю, тело растёт из центра
+           кружка. Когда форма собралась, её подменяет настоящее стекло. -->
+      <div class="acc-goo" aria-hidden="true">
+        <i class="acc-ball"></i>
+        <i class="acc-body"></i>
+      </div>
+      <i class="acc-glass" aria-hidden="true"></i>
+      <div class="acc-menu" id="accMenu" role="dialog" aria-label="Аккаунт">
+        <p class="acc-name">Гость</p>
+        <p class="acc-mail">войдите, чтобы сохранять колоды</p>
+        <ul class="acc-list">
+          <li><span>Мои презентации</span><b>12</b></li>
+          <li><span>Мои шаблоны</span><b>3</b></li>
+          <li><span>Формат по умолчанию</span><b>pptx</b></li>
+        </ul>
+        <button class="btn acc-cta" type="button">Войти</button>
+      </div>
+
+      <!-- ══ Окно ══ -->
+      <section class="win">
+        <div class="win__bar">
+          <i class="win__dot win__dot--r"></i>
+          <i class="win__dot win__dot--y"></i>
+          <i class="win__dot win__dot--g"></i>
+        </div>
+
+        <div class="win__body">
+
+          <!-- ── Состояние 1: редактор ── -->
+          <div class="view view--edit is-on" id="viewEdit">
+
+            <!-- шаблоны: до трёх штук, первая ячейка — «добавить» -->
+            <div class="pane pane--tpl">
+              <div class="slots" id="tplSlots"></div>
+            </div>
+
+            <!-- картинки: та же механика -->
+            <div class="pane pane--img">
+              <div class="slots slots--img" id="imgSlots"></div>
+            </div>
+
+            <!-- промт для нейросети -->
+            <div class="pane pane--prompt">
+              <textarea class="prompt" id="prompt" spellcheck="false"
+                        placeholder="Опиши задачу: тема и аудитория, тон, сколько слайдов, что обязательно должно быть внутри. Чем конкретнее — тем ближе результат."></textarea>
+              <button class="btn go" id="go" type="button">Сгенерировать</button>
+            </div>
+          </div>
+
+          <!-- ── Состояние 2: генерация ── -->
+          <div class="view view--gen" id="viewGen">
+            <div class="pane pane--gen">
+              <div class="gen">
+                <div class="gen__logo" id="genLogo">ЦДС</div>
+                <div class="gen__word">
+                  <span id="genWord"></span><i class="gen__caret" id="genCaret"></i>
+                  <i class="gen__dots" id="genDots"><b></b><b></b><b></b></i>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ── Состояние 3: демонстрация ── -->
+          <div class="view view--show" id="viewShow">
+            <div class="rail" id="rail"></div>
+            <div class="canvas" id="canvas"></div>
+          </div>
+
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <!-- свой курсор: кольцо с отставанием и точка ровно под указателем -->
+  <div class="cur" id="cur" aria-hidden="true"></div>
+  <div class="cur__dot" id="curDot" aria-hidden="true"></div>
+
+  <!-- ══ Преломление стекла ══
+       Те же фильтры, что на главной. Карта смещения: красный канал — профиль
+       по X, зелёный — по Y, 128 значит «не трогать»; синий держим на 128 и
+       подставляем в ту ось, которую проход двигать не должен, — так у
+       горизонтали и вертикали независимые амплитуды. Профиль линзовый:
+       смещение тянет фон к центру тем сильнее, чем дальше от него точка. -->
+  <svg class="fx" width="0" height="0" aria-hidden="true" focusable="false">
+    <filter id="lensGlass" filterUnits="objectBoundingBox" x="0" y="0" width="1" height="1"
+            primitiveUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feImage href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='120'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='0'%3E%3Cstop offset='0' stop-color='rgb(255,0,0)'/%3E%3Cstop offset='0.05' stop-color='rgb(221,0,0)'/%3E%3Cstop offset='0.1' stop-color='rgb(197,0,0)'/%3E%3Cstop offset='0.15' stop-color='rgb(180,0,0)'/%3E%3Cstop offset='0.2' stop-color='rgb(168,0,0)'/%3E%3Cstop offset='0.25' stop-color='rgb(159,0,0)'/%3E%3Cstop offset='0.3' stop-color='rgb(152,0,0)'/%3E%3Cstop offset='0.35' stop-color='rgb(145,0,0)'/%3E%3Cstop offset='0.4' stop-color='rgb(139,0,0)'/%3E%3Cstop offset='0.45' stop-color='rgb(134,0,0)'/%3E%3Cstop offset='0.5' stop-color='rgb(128,0,0)'/%3E%3Cstop offset='0.55' stop-color='rgb(122,0,0)'/%3E%3Cstop offset='0.6' stop-color='rgb(117,0,0)'/%3E%3Cstop offset='0.65' stop-color='rgb(111,0,0)'/%3E%3Cstop offset='0.7' stop-color='rgb(104,0,0)'/%3E%3Cstop offset='0.75' stop-color='rgb(97,0,0)'/%3E%3Cstop offset='0.8' stop-color='rgb(88,0,0)'/%3E%3Cstop offset='0.85' stop-color='rgb(76,0,0)'/%3E%3Cstop offset='0.9' stop-color='rgb(59,0,0)'/%3E%3Cstop offset='0.95' stop-color='rgb(35,0,0)'/%3E%3Cstop offset='1' stop-color='rgb(1,0,0)'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='200' height='120' fill='url(%23g)'/%3E%3C/svg%3E"
+               preserveAspectRatio="none" result="mx"/>
+      <feImage href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='120'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='rgb(0,255,0)'/%3E%3Cstop offset='0.05' stop-color='rgb(0,221,0)'/%3E%3Cstop offset='0.1' stop-color='rgb(0,197,0)'/%3E%3Cstop offset='0.15' stop-color='rgb(0,180,0)'/%3E%3Cstop offset='0.2' stop-color='rgb(0,168,0)'/%3E%3Cstop offset='0.25' stop-color='rgb(0,159,0)'/%3E%3Cstop offset='0.3' stop-color='rgb(0,152,0)'/%3E%3Cstop offset='0.35' stop-color='rgb(0,145,0)'/%3E%3Cstop offset='0.4' stop-color='rgb(0,139,0)'/%3E%3Cstop offset='0.45' stop-color='rgb(0,134,0)'/%3E%3Cstop offset='0.5' stop-color='rgb(0,128,0)'/%3E%3Cstop offset='0.55' stop-color='rgb(0,122,0)'/%3E%3Cstop offset='0.6' stop-color='rgb(0,117,0)'/%3E%3Cstop offset='0.65' stop-color='rgb(0,111,0)'/%3E%3Cstop offset='0.7' stop-color='rgb(0,104,0)'/%3E%3Cstop offset='0.75' stop-color='rgb(0,97,0)'/%3E%3Cstop offset='0.8' stop-color='rgb(0,88,0)'/%3E%3Cstop offset='0.85' stop-color='rgb(0,76,0)'/%3E%3Cstop offset='0.9' stop-color='rgb(0,59,0)'/%3E%3Cstop offset='0.95' stop-color='rgb(0,35,0)'/%3E%3Cstop offset='1' stop-color='rgb(0,1,0)'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='200' height='120' fill='url(%23g)'/%3E%3C/svg%3E"
+               preserveAspectRatio="none" result="my"/>
+      <feBlend in="mx" in2="my" mode="screen" result="mxy"/>
+      <feColorMatrix in="mxy" result="map"
+                     values="1 0 0 0 0  0 1 0 0 0  0 0 0 0 .5  0 0 0 0 1"/>
+
+      <feDisplacementMap in="SourceGraphic" in2="map" scale="25" xChannelSelector="R" yChannelSelector="B" result="hr"/>
+      <feDisplacementMap in="SourceGraphic" in2="map" scale="22" xChannelSelector="R" yChannelSelector="B" result="hg"/>
+      <feDisplacementMap in="SourceGraphic" in2="map" scale="19.4" xChannelSelector="R" yChannelSelector="B" result="hb"/>
+      <feColorMatrix in="hr" result="cr" values="1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0"/>
+      <feColorMatrix in="hg" result="cg" values="0 0 0 0 0  0 1 0 0 0  0 0 0 0 0  0 0 0 1 0"/>
+      <feColorMatrix in="hb" result="cb" values="0 0 0 0 0  0 0 0 0 0  0 0 1 0 0  0 0 0 1 0"/>
+      <feBlend in="cr" in2="cg" mode="screen" result="crg"/>
+      <feBlend in="crg" in2="cb" mode="screen" result="rgb"/>
+
+      <feDisplacementMap in="rgb" in2="map" scale="9" xChannelSelector="B" yChannelSelector="G"/>
+    </filter>
+
+    <!-- слипание фигур: размываем слой и режем по порогу — на стыке
+         получается перетяжка, как у капли; второй порог даёт тонкую
+         кромку по всему контуру -->
+    <filter id="gooGlass" x="-30%" y="-30%" width="160%" height="160%" color-interpolation-filters="sRGB">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="6" result="b"/>
+      <feColorMatrix in="b" result="solid"
+                     values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 24 -11"/>
+      <feColorMatrix in="b" result="core"
+                     values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 24 -12.7"/>
+      <feComposite in="solid" in2="core" operator="out" result="edge"/>
+      <feFlood flood-color="#ffffff" flood-opacity=".7" result="lite"/>
+      <feComposite in="lite" in2="edge" operator="in" result="rim"/>
+      <!-- заливку капли приглушаем до полупрозрачной: панель обязана
+           выглядеть стеклом с первого кадра. Кромку не трогаем -->
+      <feColorMatrix in="solid" result="soft"
+                     values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 .45 0"/>
+      <feMerge><feMergeNode in="soft"/><feMergeNode in="rim"/></feMerge>
+    </filter>
+  </svg>
+
+  <script src="configurator.js"></script>
+</body>
+</html>

@@ -3,252 +3,428 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Prism — презентации с помощью нейросети</title>
-  <meta name="description" content="Prism создаёт готовые презентации из одного описания: текст, визуал и вёрстка — за 40 секунд.">
-  <meta name="theme-color" content="#080b16">
+  <title>Цифровой дизайнер слайдов</title>
+  <meta name="description" content="Выбери шаблон, собери презентацию и экспортируй в pptx, html или pdf.">
+  <meta name="theme-color" content="#000000">
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700;900&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@900&display=swap" rel="stylesheet">
 
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
 
-  <!-- ══════════ Фон: тёмная база, световая полоса, цветные блики, зерно ══════════ -->
-  <div class="bg" aria-hidden="true">
-    <div class="bg__band"></div>
-    <div class="bg__orb bg__orb--a"></div>
-    <div class="bg__orb bg__orb--b"></div>
-    <div class="bg__orb bg__orb--c"></div>
-    <div class="bg__grain"></div>
-  </div>
+  <!-- Сайт листается по слайдам: колесо / свайп / стрелки / точки справа.
+       Порядок: главный экран, лента шаблонов, бриф, разбор шаблона,
+       варианты вёрстки, экспорт, переход в конфигуратор. Логика — в app.js. -->
+  <div class="stage" id="stage">
 
-  <!-- ══════════ Шапка ══════════ -->
-  <header class="nav">
-    <a class="nav__logo glass" href="#" aria-label="Prism — на главную">
-      <span class="nav__logo-dot"></span>
-    </a>
+    <!-- живая сетка — фон всех слайдов (рисует app.js) -->
+    <canvas class="gridc" id="vortex" aria-hidden="true"></canvas>
 
-    <nav class="nav__pill glass" aria-label="Разделы">
-      <span class="nav__brand">Prism</span>
-      <a href="#" data-goto="1">Как работает</a>
-      <a href="#" data-goto="2">Возможности</a>
-      <a href="#" data-goto="3">Шаблоны</a>
-      <a href="#" data-goto="4">Тарифы</a>
-      <a href="#" class="nav__cta" data-goto="5">Попробовать</a>
-    </nav>
+    <!-- ══ Слайды 1, 2, 5: главный экран, лента шаблонов, экспорт ══
+         Координаты внутри .scene — пиксели композиции 750×422. -->
+    <div class="scene" id="sceneIntro">
 
-    <a class="nav__user glass" href="#" aria-label="Войти">
-      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
-        <circle cx="12" cy="8.5" r="3.6"/>
-        <path d="M4.5 20c1.3-3.6 4.1-5.4 7.5-5.4s6.2 1.8 7.5 5.4"/>
-      </svg>
-    </a>
-  </header>
+      <!-- лента шаблонов: идёт всегда, карточки создаёт app.js,
+           клонируя макеты из #cardTpls по кругу -->
+      <div class="stream" id="stream" aria-label="Шаблоны презентаций"></div>
 
-  <!-- ══════════ Сцена: заголовок + колода карточек ══════════
-       Каждая <article class="card"> — один «слайд» сайта.
-       data-title — большой заголовок над колодой, сам текст — внутри панелей.
-       Чтобы добавить слайд, просто добавьте ещё один <article class="card">:
-       прокрутка, точки навигации и заголовки подхватятся автоматически.
-       Ссылки в шапке ведут на слайд по индексу (data-goto="0…N-1"). -->
-  <main class="stage" id="stage">
-    <div class="titles" id="titles" aria-live="polite"></div>
+      <!-- Слайд 1: главный экран -->
+      <section class="sc" id="sc1">
+        <div class="shell">
+          <header class="top">
+            <span class="logo">ЦДС</span>
 
-    <div class="deck-wrap">
-      <div class="deck" id="deck">
+            <nav class="nav glass" aria-label="Разделы">
+              <i class="nav__lens" id="navLens" aria-hidden="true"></i>
+              <a class="nav__item is-active" href="#" data-slide="0">Главная</a>
+              <a class="nav__item" href="#" data-slide="1">Шаблоны</a>
+              <a class="nav__item" href="#" data-slide="2">Генерация</a>
+              <a class="nav__item" href="#" data-slide="4">Экспорт</a>
+            </nav>
 
-        <!-- ── Карта 1: Начнём ── -->
-        <article class="card" data-title="Начнем">
-          <section class="panel panel--input">
-            <span class="eyebrow">Тема презентации</span>
-            <p class="prompt">Запуск сервиса доставки еды в&nbsp;Казани: питч для инвесторов<span class="caret"></span></p>
-            <span class="hint">⌘ + Enter — сгенерировать</span>
-          </section>
-
-          <section class="panel panel--settings">
-            <div class="chips">
-              <span class="chip">12 слайдов</span>
-              <span class="chip">Деловой стиль</span>
-              <span class="chip">Русский</span>
-              <span class="chip chip--ghost">+</span>
-            </div>
-            <button class="btn btn--primary" type="button">
-              Сгенерировать
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+            <button class="avatar" id="avatar" type="button" aria-label="Аккаунт"
+                    aria-expanded="false" aria-controls="accMenu">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round">
+                <circle cx="12" cy="8.6" r="3.6"/><path d="M4.6 20c1.3-3.6 4-5.4 7.4-5.4s6.1 1.8 7.4 5.4"/>
+              </svg>
             </button>
-          </section>
+          </header>
 
-          <section class="panel panel--big panel--preview">
-            <div class="preview">
-              <div class="preview__slide">
-                <span class="preview__label">Слайд 01 / 12</span>
-                <div class="preview__title"></div>
-                <div class="preview__title preview__title--short"></div>
-                <div class="preview__row">
-                  <div class="preview__img"></div>
-                  <div class="preview__lines">
-                    <i></i><i></i><i></i><i></i>
-                  </div>
+          <!-- ══ Аккаунт ══
+               Силуэт панели и кружок иконки лежат в одном слое под фильтром
+               #gooGlass: он размывает их вместе и режет по порогу, поэтому
+               рядом они слипаются в одну каплю с перетяжкой. Панель растёт
+               из центра кружка — отсюда ощущение, что стекло вытекает
+               из иконки. Содержимое лежит отдельным слоем поверх. -->
+          <div class="acc-goo" id="accGoo" aria-hidden="true">
+            <i class="acc-ball"></i>
+            <i class="acc-body"></i>
+          </div>
+
+          <!-- настоящее стекло панели: то же преломление, что у линзы навигации.
+               Появляется, когда капля уже собралась в нужную форму, и
+               подменяет её — дальше панель живёт как стекло. -->
+          <i class="acc-glass" aria-hidden="true"></i>
+
+          <div class="acc-menu" id="accMenu" role="dialog" aria-label="Аккаунт">
+            <p class="acc-name">Гость</p>
+            <p class="acc-mail">войдите, чтобы сохранять колоды</p>
+            <ul class="acc-list">
+              <li><span>Мои презентации</span><b>12</b></li>
+              <li><span>Мои шаблоны</span><b>3</b></li>
+              <li><span>Формат по умолчанию</span><b>pptx</b></li>
+            </ul>
+            <button class="acc-cta" type="button">Войти</button>
+          </div>
+
+          <!-- вкладка с рабочим интерфейсом конфигуратора -->
+          <div class="tab" id="tab">
+            <div class="tab__bar">
+              <i class="tab__dot"></i><i class="tab__dot"></i><i class="tab__dot"></i>
+              <span class="tab__name">Конфигуратор · Питч новой фичи</span>
+              <span class="tab__live" id="tabLive">генерация 8 / 12</span>
+            </div>
+            <!-- содержимое вкладки — то же, чем встречает демонстрация в
+                 конфигураторе: слева лента миниатюр слайдов, справа большой
+                 холст с выбранным. Пропорции внутри карточки (bar/box/line)
+                 взяты из .deck-slide в configurator.css один в один. -->
+            <div class="tab__body">
+              <aside class="tab__rail">
+                <div class="thumb is-on"><i class="thumb__bar"></i><i class="thumb__box"></i></div>
+                <div class="thumb"><i class="thumb__bar"></i><i class="thumb__box"></i></div>
+                <div class="thumb"><i class="thumb__bar short"></i><i class="thumb__box tall"></i></div>
+              </aside>
+              <div class="tab__canvas">
+                <div class="tcanvas">
+                  <i class="tcanvas__bar"></i>
+                  <i class="tcanvas__box"></i>
+                  <i class="tcanvas__line"></i><i class="tcanvas__line short"></i>
                 </div>
               </div>
-              <div class="progress">
-                <span class="progress__text">Генерация · подбираем визуал</span>
-                <span class="progress__bar"><i></i></span>
-              </div>
             </div>
-          </section>
-        </article>
+            <div class="tab__progress"><i id="tabBar"></i></div>
+          </div>
 
-        <!-- ── Карта 2: Как это работает ── -->
-        <article class="card" data-title="Как это работает">
-          <section class="panel">
-            <span class="num">01</span>
-            <h3>Опишите идею</h3>
-            <p>Одно предложение, тезисы или целый документ — нейросеть поймёт контекст и предложит структуру.</p>
-          </section>
+          <!-- заголовок: первая буква каждой строки складывается в ЦДС -->
+          <h1 class="hero">
+            <span><em>Ц</em>ифровой</span>
+            <span><em>Д</em>изайнер</span>
+            <span><em>С</em>лайдов</span>
+          </h1>
+          <p class="lead">Создай свою <em>презентацию</em> с<br>помощью нейросети,<br>с возможностью создания<br><em>своих шаблонов</em></p>
 
-          <section class="panel">
-            <span class="num">02</span>
-            <h3>Выберите стиль</h3>
-            <p>40+ дизайн-систем. Шрифты, палитры и сетки подбираются под тему автоматически.</p>
-          </section>
+          <a class="btn btn--goto" href="configurator.html">
+            К конфигуратору
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17L17 7M9 7h8v8"/></svg>
+          </a>
+        </div>
+      </section>
 
-          <section class="panel panel--big">
-            <span class="num">03</span>
-            <h3>Получите готовые слайды</h3>
-            <p>Текст, иллюстрации, графики и заметки спикера. Экспорт в PPTX, PDF и Keynote одним нажатием.</p>
-            <div class="thumbs">
-              <i class="thumb thumb--1"></i><i class="thumb thumb--2"></i><i class="thumb thumb--3"></i>
-              <i class="thumb thumb--4"></i><i class="thumb thumb--5"></i><i class="thumb thumb--6"></i>
+      <!-- Слайд 2: лента шаблонов между блоками -->
+      <section class="sc" id="sc2">
+        <p class="slab slab--l" id="slabL">Выбери свой<br><em>шаблон</em></p>
+        <p class="slab slab--r" id="slabR">или создай<br><em>свой</em></p>
+      </section>
+
+      <!-- Слайд 5: экспорт (макет из ЭКспорт.psd) -->
+      <section class="sc" id="sc3">
+        <h2 class="e-title"><span><em>Экспортируй</em></span><span>в удобный тебе формат</span></h2>
+        <div class="formats" id="formats">
+          <div class="fmt" data-i="0">
+            <div class="fmt__prev">
+              <i class="fmt__bar"></i>
+              <i class="fmt__block"></i>
             </div>
-          </section>
-        </article>
-
-        <!-- ── Карта 3: Возможности ── -->
-        <article class="card" data-title="Возможности">
-          <section class="panel">
-            <span class="icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6h16M4 12h10M4 18h13"/></svg>
-            </span>
-            <h3>Текст</h3>
-            <p>Структура, тезисы, заголовки и заметки спикера в нужном тоне — от строгого до дерзкого.</p>
-          </section>
-
-          <section class="panel">
-            <span class="icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="10" r="1.6"/><path d="M21 16l-5-5-8 8"/></svg>
-            </span>
-            <h3>Визуал</h3>
-            <p>Генерация изображений, иконок и диаграмм в едином стиле презентации.</p>
-          </section>
-
-          <section class="panel panel--big">
-            <span class="icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg>
-            </span>
-            <h3>Умная вёрстка</h3>
-            <p>Сетки, отступы и типографика выравниваются сами. Вы правите текст — дизайн не ломается.</p>
-            <ul class="checks">
-              <li>Фирменные цвета и логотип</li>
-              <li>Автоматические графики из таблиц</li>
-              <li>Перевод на 30 языков</li>
-              <li>Совместное редактирование</li>
-            </ul>
-          </section>
-        </article>
-
-        <!-- ── Карта 4: Шаблоны ── -->
-        <article class="card" data-title="Шаблоны">
-          <section class="panel panel--tpl panel--tpl-a">
-            <h3>Питч для инвесторов</h3>
-            <p>Проблема, решение, рынок, команда, финансы — 12 слайдов по проверенной структуре.</p>
-          </section>
-
-          <section class="panel panel--tpl panel--tpl-b">
-            <h3>Лекция и обучение</h3>
-            <p>Понятные схемы, примеры и вопросы для аудитории в конце каждого блока.</p>
-          </section>
-
-          <section class="panel panel--big">
-            <h3>Ещё 40 сценариев</h3>
-            <div class="gallery">
-              <figure class="tile tile--1"><figcaption>Отчёт</figcaption></figure>
-              <figure class="tile tile--2"><figcaption>Продукт</figcaption></figure>
-              <figure class="tile tile--3"><figcaption>Портфолио</figcaption></figure>
-              <figure class="tile tile--4"><figcaption>Стратегия</figcaption></figure>
-              <figure class="tile tile--5"><figcaption>Конференция</figcaption></figure>
-              <figure class="tile tile--6"><figcaption>Резюме</figcaption></figure>
+            <b class="fmt__name">pptx</b>
+          </div>
+          <div class="fmt" data-i="1">
+            <div class="fmt__prev">
+              <i class="fmt__bar fmt__bar--short"></i>
+              <div class="fmt__pair"><i class="fmt__block"></i><i class="fmt__block"></i></div>
             </div>
-          </section>
-        </article>
-
-        <!-- ── Карта 5: Тарифы ── -->
-        <article class="card" data-title="Тарифы">
-          <section class="panel">
-            <span class="eyebrow">Free</span>
-            <div class="price">0 ₽</div>
-            <p>3 презентации в месяц, базовые стили, экспорт в PDF.</p>
-          </section>
-
-          <section class="panel">
-            <span class="eyebrow">Pro</span>
-            <div class="price">990 ₽<small>/мес</small></div>
-            <p>Безлимит, все стили, экспорт в PPTX и Keynote, свой брендинг.</p>
-          </section>
-
-          <section class="panel panel--big panel--featured">
-            <span class="eyebrow">Team</span>
-            <div class="price">2 490 ₽<small>/мес</small></div>
-            <p>Совместная работа, общая библиотека стилей, права доступа и SSO. До 10 участников.</p>
-            <ul class="checks">
-              <li>Общие шаблоны команды</li>
-              <li>Комментарии и версии</li>
-              <li>Приоритетная генерация</li>
-            </ul>
-            <button class="btn btn--primary" type="button">Выбрать Team</button>
-          </section>
-        </article>
-
-        <!-- ── Карта 6: Попробовать ── -->
-        <article class="card" data-title="Попробовать">
-          <section class="panel">
-            <h3>Без карты</h3>
-            <p>Три презентации бесплатно — регистрация занимает 20 секунд.</p>
-          </section>
-
-          <section class="panel">
-            <h3>Экспорт куда угодно</h3>
-            <div class="chips chips--wrap">
-              <span class="chip">PPTX</span><span class="chip">PDF</span><span class="chip">Keynote</span><span class="chip">Google Slides</span>
+            <b class="fmt__name">html</b>
+          </div>
+          <div class="fmt" data-i="2">
+            <div class="fmt__prev">
+              <i class="fmt__bar"></i>
+              <i class="fmt__line"></i><i class="fmt__line fmt__line--short"></i>
+              <i class="fmt__block fmt__block--small"></i>
             </div>
-          </section>
+            <b class="fmt__name">pdf</b>
+          </div>
+        </div>
+      </section>
 
-          <section class="panel panel--big panel--cta">
-            <h3 class="cta-title">Создайте первую презентацию прямо сейчас</h3>
-            <form class="cta-form" onsubmit="return false">
-              <input class="input" type="email" placeholder="you@company.ru" aria-label="Электронная почта">
-              <button class="btn btn--primary" type="submit">Начать</button>
-            </form>
-            <p class="fine">Нажимая «Начать», вы соглашаетесь с условиями сервиса.</p>
-          </section>
-        </article>
+    </div>
 
+    <!-- ══ Слайды по ТЗ: путь пользователя в конфигураторе (координаты композиции) ══ -->
+    <div class="scene" id="sceneUi">
+
+      <!-- Слайд 3: опиши задачу (макет из ОПИШИЗАДАЧУ.psd) -->
+      <section class="ui" id="s4">
+        <h2 class="b-title">
+          <span class="b-title__a"><em>Опиши задачу</em></span>
+          <span class="b-title__b">результат через<br>пару минут</span>
+        </h2>
+
+        <!-- бриф печатается в правой панели -->
+        <div class="brief" id="brief">
+          <p class="brief__text"><span id="briefText"></span><i class="brief__caret" id="briefCaret"></i></p>
+        </div>
+
+        <!-- окно конфигуратора: блоки приходят, когда бриф дописан.
+             Три панели повторяют реальный редактор — шаблоны, картинки и
+             промт, — только в миниатюре: первый слот каждого ряда
+             дашевый «добавить», остальные — заполненные плейсхолдеры. -->
+        <div class="win" id="win">
+          <div class="win__bar">
+            <i class="win__dot win__dot--r"></i>
+            <i class="win__dot win__dot--y"></i>
+            <i class="win__dot win__dot--g"></i>
+          </div>
+          <div class="win__block win__block--a">
+            <i class="win__slot win__slot--add"></i>
+            <i class="win__slot"></i>
+            <i class="win__slot"></i>
+          </div>
+          <div class="win__block win__block--b">
+            <i class="win__slot win__slot--add"></i>
+            <i class="win__slot"></i>
+            <i class="win__slot win__slot--wide"></i>
+          </div>
+          <div class="win__block win__block--c">
+            <i class="win__line"></i>
+            <i class="win__line"></i>
+            <i class="win__line"></i>
+            <i class="win__line short"></i>
+            <i class="win__go"></i>
+          </div>
+        </div>
+      </section>
+
+      <!-- Слайд 4: три варианта вёрстки (макет из 4слайд.aep) -->
+      <section class="ui" id="s5">
+        <h2 class="v-title"><span><em>Один</em> промт —</span><span>Три варианта верстки</span></h2>
+
+        <!-- стеклянная подложка выбора: лежит под карточками и переезжает между ними -->
+        <i class="vpick" id="vframe" aria-hidden="true"></i>
+
+        <div class="variants" id="variants">
+          <div class="variant" data-i="0">
+            <i class="v-bar"></i>
+            <i class="v-block"></i>
+            <i class="v-block"></i>
+          </div>
+          <div class="variant" data-i="1">
+            <i class="v-bar"></i>
+            <i class="v-block v-block--tall"></i>
+            <i class="v-line"></i><i class="v-line v-line--short"></i>
+          </div>
+          <div class="variant" data-i="2">
+            <i class="v-bar v-bar--short"></i>
+            <i class="v-block v-block--hero"></i>
+            <b class="v-num">+38 %</b>
+          </div>
+        </div>
+      </section>
+
+    </div>
+
+    <!-- Слайд 6: финал — переход в конфигуратор -->
+    <section class="final" id="final">
+      <p class="final__kicker">Всё это — в конфигураторе</p>
+      <a class="badge" id="badge" href="configurator.html" aria-label="Перейти в конфигуратор">
+        <svg class="badge__ring" viewBox="0 0 200 200" aria-hidden="true">
+          <defs><path id="ringPath" d="M100,100 m-78,0 a78,78 0 1,1 156,0 a78,78 0 1,1 -156,0"/></defs>
+          <text class="badge__text"><textPath href="#ringPath" textLength="488" lengthAdjust="spacingAndGlyphs">Перейти в конфигуратор • Перейти в конфигуратор • </textPath></text>
+        </svg>
+        <span class="badge__core">
+          <svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17L17 7M9 7h8v8"/></svg>
+        </span>
+      </a>
+    </section>
+
+    <!-- навигация по слайдам -->
+    <nav class="dots" id="dots" aria-label="Слайды">
+      <button type="button" data-slide="0" aria-label="Слайд 1"></button>
+      <button type="button" data-slide="1" aria-label="Слайд 2"></button>
+      <button type="button" data-slide="2" aria-label="Слайд 3"></button>
+      <button type="button" data-slide="3" aria-label="Слайд 4"></button>
+      <button type="button" data-slide="4" aria-label="Слайд 5"></button>
+      <button type="button" data-slide="5" aria-label="Слайд 6"></button>
+    </nav>
+    <button type="button" class="hint" id="hint" aria-label="Следующий слайд">
+      <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" aria-hidden="true"><path d="M10.6 2h2.8v13.2l4.5-4.5 2 2L12 21.6 4.1 12.7l2-2 4.5 4.5z"/></svg>
+    </button>
+
+  </div>
+
+  <!-- ══ Макеты шаблонов для ленты. Порядок задаёт чередование в ленте ══ -->
+  <div id="cardTpls" hidden>
+    <template>
+      <div class="t t--hero">
+        <span class="t__kicker">Питч</span>
+        <b class="t__title">Запуск<br>продукта</b>
+        <i class="t__rule"></i>
+        <span class="t__foot">01</span>
       </div>
-    </div>
+    </template>
 
-    <div class="scroll-hint" id="scrollHint" aria-hidden="true">
-      <span>Листайте</span>
-      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
-    </div>
-  </main>
+    <template>
+      <div class="t t--report">
+        <b class="t__title">Итоги квартала</b>
+        <i class="t__bar w70"></i><i class="t__bar w50"></i>
+        <div class="t__chart"><b style="--h:.35"></b><b style="--h:.5"></b><b style="--h:.42"></b><b style="--h:.72"></b><b style="--h:1"></b></div>
+        <span class="t__foot">04</span>
+      </div>
+    </template>
 
-  <!-- Навигация по карточкам (справа) -->
-  <nav class="rail glass" id="rail" aria-label="Карточки"></nav>
+    <template>
+      <div class="t t--metric">
+        <b class="t__num">+38<small>%</small></b>
+        <span class="t__label">рост выручки<br>за год</span>
+        <div class="t__spark"><b style="--h:.4"></b><b style="--h:.62"></b><b style="--h:.55"></b><b style="--h:1"></b></div>
+      </div>
+    </template>
 
-  <!-- Невидимый «трек» прокрутки: по одному экрану на карточку -->
-  <div class="track" id="track" aria-hidden="true"></div>
+    <template>
+      <div class="t t--cols">
+        <b class="t__title">Рынок и спрос</b>
+        <div class="t__col"><i class="t__bar w90"></i><i class="t__bar w75"></i><i class="t__bar w85"></i><i class="t__bar w55"></i></div>
+        <div class="t__col"><i class="t__bar w80"></i><i class="t__bar w90"></i><i class="t__bar w60"></i><i class="t__bar w70"></i></div>
+      </div>
+    </template>
+
+    <template>
+      <div class="t t--photo">
+        <i class="t__img"></i>
+        <div class="t__side">
+          <b class="t__title">Команда</b>
+          <i class="t__bar w90"></i><i class="t__bar w70"></i><i class="t__bar w80"></i>
+        </div>
+      </div>
+    </template>
+
+    <template>
+      <div class="t t--agenda">
+        <span class="t__kicker">Повестка</span>
+        <div class="t__row"><b>01</b><i class="t__bar w80"></i></div>
+        <div class="t__row"><b>02</b><i class="t__bar w60"></i></div>
+        <div class="t__row"><b>03</b><i class="t__bar w75"></i></div>
+        <div class="t__row"><b>04</b><i class="t__bar w50"></i></div>
+      </div>
+    </template>
+
+    <template>
+      <div class="t t--compare">
+        <b class="t__title">Было / стало</b>
+        <div class="t__pair">
+          <div class="t__pane"><i class="t__bar w70"></i><i class="t__bar w90"></i><i class="t__bar w55"></i></div>
+          <div class="t__pane is-on"><i class="t__bar w80"></i><i class="t__bar w60"></i><i class="t__mark"></i></div>
+        </div>
+      </div>
+    </template>
+
+    <template>
+      <div class="t t--quote">
+        <b class="t__mark2">«</b>
+        <span class="t__q">Собрали питч<br>за один вечер</span>
+        <span class="t__who">— продакт</span>
+      </div>
+    </template>
+  </div>
+
+  <!-- свой курсор: кольцо с отставанием и точка ровно под указателем -->
+  <div class="cur" id="cur" aria-hidden="true"></div>
+  <div class="cur__dot" id="curDot" aria-hidden="true"></div>
+
+  <!-- ══ Преломление стекла ══
+       Модель собрана по шаблону «Liquid Glass Social Media Lowerthirds»:
+       фон размывается, тонируется и смещается по карте, поверх идут
+       световые кромки и внутреннее свечение. Здесь — смещение.
+
+       Карта: красный канал — профиль по X, зелёный — по Y, 128 значит
+       «не трогать». Синий принудительно держим на 128 и подставляем в ту
+       ось, которую проход не должен двигать, — так горизонталь и вертикаль
+       получают независимые амплитуды (в шаблоне это Distortion Amount 1 и 2).
+
+       Профиль — линза: смещение тянет фон к центру тем сильнее, чем дальше
+       от него точка, и это даёт увеличение по всей площади стекла; у самой
+       кромки оно резко нарастает, отсюда сжатие и цветная кайма по краю. -->
+  <svg class="fx" width="0" height="0" aria-hidden="true" focusable="false">
+    <!-- спокойное стекло: мягко увеличивает и сильно гнёт у кромки -->
+    <filter id="lensGlass" filterUnits="objectBoundingBox" x="0" y="0" width="1" height="1"
+            primitiveUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feImage href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='120'%3E%3Cdefs%3E %3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='0'%3E%3Cstop offset='0' stop-color='rgb(255,0,0)'/%3E%3Cstop offset='0.05' stop-color='rgb(221,0,0)'/%3E%3Cstop offset='0.1' stop-color='rgb(197,0,0)'/%3E%3Cstop offset='0.15' stop-color='rgb(180,0,0)'/%3E%3Cstop offset='0.2' stop-color='rgb(168,0,0)'/%3E%3Cstop offset='0.25' stop-color='rgb(159,0,0)'/%3E%3Cstop offset='0.3' stop-color='rgb(152,0,0)'/%3E%3Cstop offset='0.35' stop-color='rgb(145,0,0)'/%3E%3Cstop offset='0.4' stop-color='rgb(139,0,0)'/%3E%3Cstop offset='0.45' stop-color='rgb(134,0,0)'/%3E%3Cstop offset='0.5' stop-color='rgb(128,0,0)'/%3E%3Cstop offset='0.55' stop-color='rgb(122,0,0)'/%3E%3Cstop offset='0.6' stop-color='rgb(117,0,0)'/%3E%3Cstop offset='0.65' stop-color='rgb(111,0,0)'/%3E%3Cstop offset='0.7' stop-color='rgb(104,0,0)'/%3E%3Cstop offset='0.75' stop-color='rgb(97,0,0)'/%3E%3Cstop offset='0.8' stop-color='rgb(88,0,0)'/%3E%3Cstop offset='0.85' stop-color='rgb(76,0,0)'/%3E%3Cstop offset='0.9' stop-color='rgb(59,0,0)'/%3E%3Cstop offset='0.95' stop-color='rgb(35,0,0)'/%3E%3Cstop offset='1' stop-color='rgb(1,0,0)'/%3E%3C/linearGradient%3E%3C/defs%3E %3Crect width='200' height='120' fill='url(%23g)'/%3E%3C/svg%3E" preserveAspectRatio="none" result="mx"/>
+      <feImage href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='120'%3E%3Cdefs%3E %3ClinearGradient id='g' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='rgb(0,255,0)'/%3E%3Cstop offset='0.05' stop-color='rgb(0,221,0)'/%3E%3Cstop offset='0.1' stop-color='rgb(0,197,0)'/%3E%3Cstop offset='0.15' stop-color='rgb(0,180,0)'/%3E%3Cstop offset='0.2' stop-color='rgb(0,168,0)'/%3E%3Cstop offset='0.25' stop-color='rgb(0,159,0)'/%3E%3Cstop offset='0.3' stop-color='rgb(0,152,0)'/%3E%3Cstop offset='0.35' stop-color='rgb(0,145,0)'/%3E%3Cstop offset='0.4' stop-color='rgb(0,139,0)'/%3E%3Cstop offset='0.45' stop-color='rgb(0,134,0)'/%3E%3Cstop offset='0.5' stop-color='rgb(0,128,0)'/%3E%3Cstop offset='0.55' stop-color='rgb(0,122,0)'/%3E%3Cstop offset='0.6' stop-color='rgb(0,117,0)'/%3E%3Cstop offset='0.65' stop-color='rgb(0,111,0)'/%3E%3Cstop offset='0.7' stop-color='rgb(0,104,0)'/%3E%3Cstop offset='0.75' stop-color='rgb(0,97,0)'/%3E%3Cstop offset='0.8' stop-color='rgb(0,88,0)'/%3E%3Cstop offset='0.85' stop-color='rgb(0,76,0)'/%3E%3Cstop offset='0.9' stop-color='rgb(0,59,0)'/%3E%3Cstop offset='0.95' stop-color='rgb(0,35,0)'/%3E%3Cstop offset='1' stop-color='rgb(0,1,0)'/%3E%3C/linearGradient%3E%3C/defs%3E %3Crect width='200' height='120' fill='url(%23g)'/%3E%3C/svg%3E" preserveAspectRatio="none" result="my"/>
+      <feBlend in="mx" in2="my" mode="screen" result="mxy"/>
+      <!-- синий канал делаем нейтральным (128): им подменяют ту ось,
+           которую данный проход трогать не должен -->
+      <feColorMatrix in="mxy" result="map"
+                     values="1 0 0 0 0  0 1 0 0 0  0 0 0 0 .5  0 0 0 0 1"/>
+
+      <!-- Distortion Amount 1 — горизонталь, три амплитуды дают кайму по краю -->
+      <feDisplacementMap in="SourceGraphic" in2="map" scale="25.08" xChannelSelector="R" yChannelSelector="B" result="hr"/>
+      <feDisplacementMap in="SourceGraphic" in2="map" scale="22" xChannelSelector="R" yChannelSelector="B" result="hg"/>
+      <feDisplacementMap in="SourceGraphic" in2="map" scale="19.36" xChannelSelector="R" yChannelSelector="B" result="hb"/>
+      <feColorMatrix in="hr" result="cr" values="1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0"/>
+      <feColorMatrix in="hg" result="cg" values="0 0 0 0 0  0 1 0 0 0  0 0 0 0 0  0 0 0 1 0"/>
+      <feColorMatrix in="hb" result="cb" values="0 0 0 0 0  0 0 0 0 0  0 0 1 0 0  0 0 0 1 0"/>
+      <feBlend in="cr" in2="cg" mode="screen" result="crg"/>
+      <feBlend in="crg" in2="cb" mode="screen" result="rgb"/>
+
+      <!-- Distortion Amount 2 — вертикаль, своя амплитуда -->
+      <feDisplacementMap in="rgb" in2="map" scale="9" xChannelSelector="B" yChannelSelector="G"/>
+    </filter>
+
+    <!-- нажатое стекло: лупа во всю площадь -->
+    <filter id="lensGlassHold" filterUnits="objectBoundingBox" x="0" y="0" width="1" height="1"
+            primitiveUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feImage href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='120'%3E%3Cdefs%3E %3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='0'%3E%3Cstop offset='0' stop-color='rgb(255,0,0)'/%3E%3Cstop offset='0.05' stop-color='rgb(238,0,0)'/%3E%3Cstop offset='0.1' stop-color='rgb(222,0,0)'/%3E%3Cstop offset='0.15' stop-color='rgb(208,0,0)'/%3E%3Cstop offset='0.2' stop-color='rgb(194,0,0)'/%3E%3Cstop offset='0.25' stop-color='rgb(182,0,0)'/%3E%3Cstop offset='0.3' stop-color='rgb(170,0,0)'/%3E%3Cstop offset='0.35' stop-color='rgb(159,0,0)'/%3E%3Cstop offset='0.4' stop-color='rgb(149,0,0)'/%3E%3Cstop offset='0.45' stop-color='rgb(138,0,0)'/%3E%3Cstop offset='0.5' stop-color='rgb(128,0,0)'/%3E%3Cstop offset='0.55' stop-color='rgb(118,0,0)'/%3E%3Cstop offset='0.6' stop-color='rgb(107,0,0)'/%3E%3Cstop offset='0.65' stop-color='rgb(97,0,0)'/%3E%3Cstop offset='0.7' stop-color='rgb(86,0,0)'/%3E%3Cstop offset='0.75' stop-color='rgb(74,0,0)'/%3E%3Cstop offset='0.8' stop-color='rgb(62,0,0)'/%3E%3Cstop offset='0.85' stop-color='rgb(48,0,0)'/%3E%3Cstop offset='0.9' stop-color='rgb(34,0,0)'/%3E%3Cstop offset='0.95' stop-color='rgb(18,0,0)'/%3E%3Cstop offset='1' stop-color='rgb(1,0,0)'/%3E%3C/linearGradient%3E%3C/defs%3E %3Crect width='200' height='120' fill='url(%23g)'/%3E%3C/svg%3E" preserveAspectRatio="none" result="mx"/>
+      <feImage href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='120'%3E%3Cdefs%3E %3ClinearGradient id='g' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='rgb(0,255,0)'/%3E%3Cstop offset='0.05' stop-color='rgb(0,238,0)'/%3E%3Cstop offset='0.1' stop-color='rgb(0,222,0)'/%3E%3Cstop offset='0.15' stop-color='rgb(0,208,0)'/%3E%3Cstop offset='0.2' stop-color='rgb(0,194,0)'/%3E%3Cstop offset='0.25' stop-color='rgb(0,182,0)'/%3E%3Cstop offset='0.3' stop-color='rgb(0,170,0)'/%3E%3Cstop offset='0.35' stop-color='rgb(0,159,0)'/%3E%3Cstop offset='0.4' stop-color='rgb(0,149,0)'/%3E%3Cstop offset='0.45' stop-color='rgb(0,138,0)'/%3E%3Cstop offset='0.5' stop-color='rgb(0,128,0)'/%3E%3Cstop offset='0.55' stop-color='rgb(0,118,0)'/%3E%3Cstop offset='0.6' stop-color='rgb(0,107,0)'/%3E%3Cstop offset='0.65' stop-color='rgb(0,97,0)'/%3E%3Cstop offset='0.7' stop-color='rgb(0,86,0)'/%3E%3Cstop offset='0.75' stop-color='rgb(0,74,0)'/%3E%3Cstop offset='0.8' stop-color='rgb(0,62,0)'/%3E%3Cstop offset='0.85' stop-color='rgb(0,48,0)'/%3E%3Cstop offset='0.9' stop-color='rgb(0,34,0)'/%3E%3Cstop offset='0.95' stop-color='rgb(0,18,0)'/%3E%3Cstop offset='1' stop-color='rgb(0,1,0)'/%3E%3C/linearGradient%3E%3C/defs%3E %3Crect width='200' height='120' fill='url(%23g)'/%3E%3C/svg%3E" preserveAspectRatio="none" result="my"/>
+      <feBlend in="mx" in2="my" mode="screen" result="mxy"/>
+      <!-- синий канал делаем нейтральным (128): им подменяют ту ось,
+           которую данный проход трогать не должен -->
+      <feColorMatrix in="mxy" result="map"
+                     values="1 0 0 0 0  0 1 0 0 0  0 0 0 0 .5  0 0 0 0 1"/>
+
+      <!-- Distortion Amount 1 — горизонталь, три амплитуды дают кайму по краю -->
+      <feDisplacementMap in="SourceGraphic" in2="map" scale="57" xChannelSelector="R" yChannelSelector="B" result="hr"/>
+      <feDisplacementMap in="SourceGraphic" in2="map" scale="50" xChannelSelector="R" yChannelSelector="B" result="hg"/>
+      <feDisplacementMap in="SourceGraphic" in2="map" scale="44" xChannelSelector="R" yChannelSelector="B" result="hb"/>
+      <feColorMatrix in="hr" result="cr" values="1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0"/>
+      <feColorMatrix in="hg" result="cg" values="0 0 0 0 0  0 1 0 0 0  0 0 0 0 0  0 0 0 1 0"/>
+      <feColorMatrix in="hb" result="cb" values="0 0 0 0 0  0 0 0 0 0  0 0 1 0 0  0 0 0 1 0"/>
+      <feBlend in="cr" in2="cg" mode="screen" result="crg"/>
+      <feBlend in="crg" in2="cb" mode="screen" result="rgb"/>
+
+      <!-- Distortion Amount 2 — вертикаль, своя амплитуда -->
+      <feDisplacementMap in="rgb" in2="map" scale="17" xChannelSelector="B" yChannelSelector="G"/>
+    </filter>
+
+    <!-- слипание фигур: размываем слой и режем по порогу — на стыке
+         получается перетяжка, как у капли; второй порог даёт тонкую
+         светлую кромку по всему контуру -->
+    <filter id="gooGlass" x="-30%" y="-30%" width="160%" height="160%" color-interpolation-filters="sRGB">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="6" result="b"/>
+      <feColorMatrix in="b" result="solid"
+                     values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 24 -11"/>
+      <feColorMatrix in="b" result="core"
+                     values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 24 -12.7"/>
+      <feComposite in="solid" in2="core" operator="out" result="edge"/>
+      <feFlood flood-color="#ffffff" flood-opacity=".7" result="lite"/>
+      <feComposite in="lite" in2="edge" operator="in" result="rim"/>
+      <!-- заливку капли приглушаем до полупрозрачной: панель обязана выглядеть
+           стеклом с первого кадра, а не наливаться плотным цветом. Кромку
+           не трогаем — она и держит форму -->
+      <feColorMatrix in="solid" result="soft"
+                     values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 .45 0"/>
+      <feMerge><feMergeNode in="soft"/><feMergeNode in="rim"/></feMerge>
+    </filter>
+  </svg>
 
   <script src="app.js"></script>
 </body>

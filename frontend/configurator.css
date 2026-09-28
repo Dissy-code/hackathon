@@ -1,0 +1,704 @@
+/* ─────────────────────────────────────────────────────────────
+   Конфигуратор ЦДС — стили
+   ─────────────────────────────────────────────────────────────
+   Раскладка снята с Состояние_1…3.psd (3779×2124, масштаб 5,039),
+   а вид — тот же, что на главной: живая сетка на фоне, тёмное
+   стекло панелей, та же палитра и те же кнопки.
+
+   Всё внутри .scene задано в пикселях композиции 750×422;
+   configurator.js вписывает сцену в окно и рисует сетку.
+   ───────────────────────────────────────────────────────────── */
+
+:root {
+  --bg: #000000;
+  --panel: #000911;
+  --ink: #ffffff;
+  --orange: #dd5e11;
+  --red: #be1212;
+  --font: "Unbounded", "Arial Black", sans-serif;
+
+  /* ── Контроллер стекла ── (как на главной) */
+  --lq-glow: rgba(255, 255, 255, .22);
+  --lq-light: rgba(255, 255, 255, .8);
+}
+
+* { box-sizing: border-box; }
+
+html, body { height: 100%; overflow: hidden; overscroll-behavior: none; background: var(--bg); }
+
+body {
+  margin: 0;
+  color: var(--ink);
+  font-family: var(--font);
+  font-weight: 900;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Сцена ── */
+.stage { position: fixed; inset: 0; overflow: hidden; }
+
+/* Слой 0 — живая сетка на canvas, как на главной */
+.gridc {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  background: #000;
+}
+
+.scene {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 750px;
+  height: 422px;
+  transform-origin: 0 0;
+}
+
+/* ══════════ Шапка ══════════ */
+.top { position: absolute; left: 0; top: 0; right: 0; height: 60px; z-index: 3; }
+
+.logo {
+  position: absolute;
+  left: 39.7px;
+  top: 25.2px;
+  font-size: 38px;
+  line-height: 0;
+  letter-spacing: -.3em;       /* буквы входят друг в друга, как в логотипе */
+  color: var(--orange);
+  text-decoration: none;
+}
+
+/* ── Стекло панелей интерфейса (как .glass на главной) ── */
+.glass {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(135deg, rgba(255,255,255,.10) 0%, rgba(255,255,255,.035) 50%, rgba(255,255,255,.02) 100%);
+  -webkit-backdrop-filter: blur(6px) saturate(150%);
+  backdrop-filter: blur(6px) saturate(150%);
+  border: 0.5px solid rgba(255,255,255,.3);
+  box-shadow:
+    inset 0 0.5px 0 rgba(255,255,255,.5),
+    inset 0 -0.5px 0 rgba(255,255,255,.06),
+    0 8px 22px rgba(0,0,0,.4);
+}
+
+/* ── Пилюля режимов ── */
+.nav {
+  position: absolute;
+  left: 194.1px;
+  top: 20px;
+  width: 365.8px;
+  height: 39.5px;
+  border-radius: 999px;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.nav__item {
+  position: absolute;
+  top: 3.6px;
+  width: 178.8px;
+  height: 32.4px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  font: inherit;
+  font-size: 15.5px;
+  line-height: 1;
+  color: rgba(255,255,255,.75);
+  cursor: pointer;
+  z-index: 1;
+  transition: color .2s;
+}
+.nav__item:nth-of-type(1) { left: 4.6px; }
+.nav__item:nth-of-type(2) { left: 182.8px; }
+.nav__item:hover { color: var(--ink); }
+.nav__item.is-active { color: var(--orange); }
+.nav__item:focus-visible { outline: 1.5px solid var(--orange); outline-offset: 2px; }
+
+/* Линза: стеклянная капля ПОВЕРХ подписей — потому их и преломляет.
+   Двигается по событию, поэтому едет на CSS-переходе. */
+.nav__lens {
+  position: absolute;
+  left: 4.6px;
+  top: 3.6px;
+  z-index: 2;
+  width: 178.8px;
+  height: 32.4px;
+  border-radius: 999px;
+  pointer-events: none;
+  transform-origin: 0 50%;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.15) 0%, rgba(255,255,255,.03) 44%, rgba(255,255,255,.1) 100%);
+  -webkit-backdrop-filter: blur(.3px) saturate(150%) brightness(1.34);
+  backdrop-filter: blur(.3px) saturate(150%) brightness(1.34);
+  border: 0.5px solid rgba(255,255,255,.55);
+  box-shadow:
+    inset 0 1px 0 var(--lq-light),
+    inset 0 -1px 0 rgba(255,255,255,.34),
+    inset 0 0 10px var(--lq-glow),
+    0 3px 12px rgba(0,0,0,.45);
+  transition:
+    transform .52s cubic-bezier(.34, 1.26, .5, 1),
+    width     .52s cubic-bezier(.34, 1.26, .5, 1);
+  will-change: transform;
+}
+@supports not (hanging-punctuation: first) {
+  .nav__lens {
+    -webkit-backdrop-filter: url(#lensGlass) blur(.3px) saturate(150%) brightness(1.32);
+    backdrop-filter: url(#lensGlass) blur(.3px) saturate(150%) brightness(1.32);
+  }
+}
+.nav__lens::before,
+.nav__lens::after { content: ""; position: absolute; border-radius: inherit; pointer-events: none; }
+.nav__lens::before {           /* внутренние кромки стекла */
+  inset: 2px 7px;
+  background:
+    linear-gradient(180deg,
+      rgba(255,255,255,.46) 0, rgba(255,255,255,0) 2.5px,
+      rgba(255,255,255,0) calc(100% - 2.5px), rgba(255,255,255,.26) 100%);
+}
+.nav__lens::after {            /* мягкий блик в углу */
+  inset: 0;
+  background: radial-gradient(90% 120% at 18% -20%, rgba(255,255,255,.18), rgba(255,255,255,0) 62%);
+}
+.nav__lens.is-drag { transition: none; }
+
+/* ── Иконка аккаунта ── */
+.avatar {
+  position: absolute;
+  left: 670.6px;
+  top: 19.8px;
+  width: 39.9px;
+  height: 39.5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;            /* кружок рисует капля .acc-ball под иконкой */
+  color: var(--orange);
+  cursor: pointer;
+}
+.avatar svg { width: 20px; height: 20px; }
+.avatar:focus-visible { outline: 1.5px solid var(--orange); outline-offset: 2px; }
+
+/* ══════════ Аккаунт ══════════
+   Кружок иконки и тело панели лежат в одном слое под фильтром #gooGlass:
+   он размывает слой целиком и режет по порогу, поэтому рядом фигуры
+   слипаются в одну каплю с перетяжкой. Тело растёт из центра кружка.
+   Центр иконки: x 690.5, y 39.5. */
+.acc-goo {
+  position: absolute;
+  left: 532.5px;
+  top: 9.8px;
+  width: 188px;
+  height: 190px;
+  z-index: 2;                  /* выше окна, ниже шапки */
+  pointer-events: none;
+  filter: url(#gooGlass);
+  opacity: 1;
+  transition: opacity .14s;
+}
+.acc-ball,
+.acc-body {
+  position: absolute;
+  display: block;
+  background: linear-gradient(168deg, #34373d 0%, #212429 46%, #14161a 100%);
+}
+.acc-ball {                    /* ровно под иконкой профиля */
+  left: 138.1px;
+  top: 10px;
+  width: 39.9px;
+  height: 39.5px;
+  border-radius: 50%;
+}
+.acc-body {
+  right: 10px;
+  top: 10px;
+  width: 168px;
+  height: 170px;
+  /* правый верхний угол скруглён по кружку — он и есть этот угол */
+  border-radius: 18px 19.8px 18px 18px;
+  transform-origin: 148px 19.7px;
+  transform: scale(.05);       /* в покое тело спрятано внутри кружка */
+  transition: transform .42s cubic-bezier(.55, 0, .35, 1);
+}
+.is-acc .acc-body {
+  transform: scale(1);
+  transition: transform .62s cubic-bezier(.22, 1.1, .34, 1);
+}
+.is-acc .acc-goo { opacity: 0; transition: opacity .22s .26s; }
+
+/* Капля показывает только рождение формы: как только она собралась,
+   её подменяет настоящее стекло — под фильтром капли backdrop-filter
+   не работает, слой сам себе фон. */
+.acc-glass {
+  position: absolute;
+  right: 39.5px;
+  top: 19.8px;
+  width: 168px;
+  height: 170px;
+  z-index: 2;
+  pointer-events: none;
+  border-radius: 18px 19.8px 18px 18px;
+  transform-origin: 148px 19.7px;
+  transform: scale(.05);
+  opacity: 0;
+  background:
+    linear-gradient(168deg, rgba(255,255,255,.1) 0%, rgba(255,255,255,.02) 46%, rgba(255,255,255,.07) 100%),
+    rgba(9,11,15,.72);
+  -webkit-backdrop-filter: blur(4px) saturate(140%) brightness(.55);
+  backdrop-filter: blur(4px) saturate(140%) brightness(.55);
+  border: 0.5px solid rgba(255,255,255,.4);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.55),
+    inset 0 -1px 0 rgba(255,255,255,.2),
+    inset 0 0 26px var(--lq-glow),
+    0 18px 44px rgba(0,0,0,.6);
+  transition: transform .42s cubic-bezier(.55, 0, .35, 1), opacity .12s;
+}
+.is-acc .acc-glass {
+  transform: scale(1);
+  opacity: 1;
+  transition: transform .62s cubic-bezier(.22, 1.1, .34, 1), opacity .12s;
+}
+@supports not (hanging-punctuation: first) {
+  .acc-glass {
+    -webkit-backdrop-filter: url(#lensGlass) blur(4px) saturate(140%) brightness(.55);
+    backdrop-filter: url(#lensGlass) blur(4px) saturate(140%) brightness(.55);
+  }
+}
+
+.acc-menu {
+  position: absolute;
+  right: 39.5px;
+  top: 19.8px;
+  width: 168px;
+  height: 170px;
+  z-index: 4;
+  padding: 16px 13px 13px;
+  display: flex;
+  flex-direction: column;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity .18s, visibility 0s .18s;
+}
+.is-acc .acc-menu {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transition: opacity .3s .16s, visibility 0s;
+}
+.acc-menu > * {
+  transform: translateY(8px);
+  opacity: 0;
+  transition: transform .34s, opacity .34s;
+}
+.is-acc .acc-menu > * { transform: none; opacity: 1; }
+.is-acc .acc-name { transition-delay: .18s; }
+.is-acc .acc-mail { transition-delay: .23s; }
+.is-acc .acc-list { transition-delay: .28s; }
+.is-acc .acc-cta  { transition-delay: .34s; }
+
+.acc-name { margin: 0; font-size: 11px; line-height: 1; color: var(--ink); }
+.acc-mail { margin: 5px 0 0; font-size: 7px; font-weight: 600; line-height: 1.4; color: rgba(255,255,255,.5); }
+.acc-list { margin: 10px 0; padding: 0; list-style: none; border-top: 0.5px solid rgba(255,255,255,.12); }
+.acc-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 0;
+  font-size: 7.6px;
+  color: rgba(255,255,255,.78);
+  border-bottom: 0.5px solid rgba(255,255,255,.12);
+}
+.acc-list li:last-child { border-bottom: 0; }
+.acc-list b { font-weight: inherit; color: var(--orange); }
+
+/* ── Кнопки: как на главной — оранжевая пилюля с чёрной подписью ── */
+.btn {
+  border: 0;
+  border-radius: 999px;
+  font: inherit;
+  color: #000;
+  background: var(--orange);
+  cursor: pointer;
+  transition: background .2s, transform .18s, box-shadow .18s;
+}
+.btn:hover { background: #f06f1c; }
+.btn:focus-visible { outline: 1.5px solid var(--orange); outline-offset: 3px; }
+
+.acc-cta { margin-top: auto; height: 22px; font-size: 8.5px; }
+
+/* ══════════ Окно ══════════
+   Большое стекло, как панель первого экрана на главной: сетка за ним
+   видна, но размыта и приглушена. Всё, что внутри, — обычные заливки:
+   они лежат на уже размытом стекле, и свой backdrop-filter им не нужен. */
+.win {
+  position: absolute;
+  left: 38.5px;
+  top: 78px;
+  width: 671.6px;
+  height: 315.2px;
+  border-radius: 18px;
+  overflow: hidden;
+  background:
+    linear-gradient(155deg, rgba(255,255,255,.065) 0%, rgba(255,255,255,.02) 48%, rgba(0,0,0,.38) 100%),
+    rgba(5,6,9,.62);
+  -webkit-backdrop-filter: blur(var(--win-blur, 16px)) saturate(130%) brightness(.34);
+  backdrop-filter: blur(var(--win-blur, 16px)) saturate(130%) brightness(.34);
+  box-shadow:
+    inset 0 0.5px 0 rgba(255,255,255,.35),
+    inset 0.5px 0 0 rgba(255,255,255,.12),
+    inset -0.5px 0 0 rgba(255,255,255,.12),
+    inset 0 -0.5px 0 rgba(255,255,255,.2),
+    0 24px 70px rgba(0,0,0,.55);
+}
+.win::before {                 /* мягкий свет по стеклу */
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background:
+    linear-gradient(160deg, rgba(255,255,255,.055) 0%, rgba(255,255,255,0) 38%),
+    radial-gradient(70% 55% at 12% -10%, rgba(255,255,255,.12), rgba(255,255,255,0) 60%),
+    radial-gradient(50% 40% at 92% 8%, rgba(221,94,17,.11), rgba(255,255,255,0) 65%);
+}
+
+.win__bar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6.9px;
+  height: 31px;
+  padding-left: 33.1px;
+  border-bottom: 0.5px solid rgba(255,255,255,.12);
+}
+.win__dot { width: 17.1px; height: 17.1px; border-radius: 50%; background: rgba(255,255,255,.22); }
+.win__dot--r { background: var(--orange); }
+
+.win__body { position: relative; height: 284.2px; }
+
+/* виды переключаются кроссфейдом со сдвигом */
+.view {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(10px);
+  transition: opacity .32s, transform .42s cubic-bezier(.3, .9, .3, 1), visibility 0s .42s;
+}
+.view.is-on {
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+  transition: opacity .34s .06s, transform .48s cubic-bezier(.22, 1.05, .35, 1), visibility 0s;
+}
+
+/* ── панели внутри окна ── */
+.pane {
+  position: absolute;
+  border-radius: 16px;
+  background: rgba(255,255,255,.045);
+  border: 0.5px solid rgba(255,255,255,.14);
+  box-shadow: inset 0 0.5px 0 rgba(255,255,255,.22);
+}
+.pane--tpl    { left: 13.1px;  top: 11.3px;  width: 258px;   height: 117.7px; }
+.pane--img    { left: 12.9px;  top: 136.9px; width: 258.2px; height: 135.4px; }
+.pane--prompt { left: 279.6px; top: 11.3px;  width: 381.3px; height: 261px; padding: 6.3px 6.8px; }
+.pane--gen    { left: 13.3px;  top: 11.3px;  width: 647.4px; height: 261.2px; padding: 6.5px; }
+
+/* ── ячейки шаблонов и картинок ── */
+.slots { position: absolute; inset: 0; }
+.slot {
+  position: absolute;
+  padding: 0;
+  border: 0.5px solid rgba(255,255,255,.14);
+  border-radius: 14px;
+  background: rgba(255,255,255,.06);
+  overflow: hidden;
+  font: inherit;
+  color: rgba(255,255,255,.6);
+  transition: background .2s, transform .2s;
+}
+.slot--add,
+.slot__kill { cursor: pointer; }
+.slot--add:hover { transform: translateY(-1.5px); }
+.slot:focus-visible,
+.slot__kill:focus-visible { outline: 1.5px solid var(--orange); outline-offset: 2px; }
+
+/* шаблоны: три ячейки в ряд */
+.slots .slot:nth-child(1) { left: 6.6px;   top: 5.7px; width: 76.8px; height: 105.8px; }
+.slots .slot:nth-child(2) { left: 90.7px;  top: 5.7px; width: 76.8px; height: 105.8px; }
+.slots .slot:nth-child(3) { left: 175.2px; top: 5.7px; width: 76.9px; height: 105.8px; }
+
+/* картинки: два маленьких слева, один большой справа */
+.slots--img .slot:nth-child(1) { left: 6.8px;  top: 6px;    width: 76.8px; height: 59.1px; }
+.slots--img .slot:nth-child(2) { left: 6.8px;  top: 70.3px; width: 76.8px; height: 59.1px; }
+.slots--img .slot:nth-child(3) { left: 91.3px; top: 6.2px;  width: 161px;  height: 123.4px; }
+
+/* ячейка «добавить» */
+.slot--add {
+  background: rgba(221, 94, 17, .12);
+  border: 1.5px dashed rgba(221, 94, 17, .6);
+}
+.slot--add:hover { background: rgba(221, 94, 17, .2); }
+.slot--add::before,
+.slot--add::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  background: var(--orange);
+  border-radius: 2px;
+}
+.slot--add::before { width: 22px; height: 3.4px; margin: -1.7px 0 0 -11px; }
+.slot--add::after  { width: 3.4px; height: 22px; margin: -11px 0 0 -1.7px; }
+
+/* заполненная ячейка: миниатюра шаблона или картинка */
+.slot__img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.slot__name {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  padding: 4px 6px;
+  font-size: 6.5px;
+  font-weight: 600;
+  line-height: 1.1;
+  color: #fff;
+  background: linear-gradient(0deg, rgba(0,0,0,.72), rgba(0,0,0,0));
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.slot__kill {                  /* крестик — снять вложение */
+  position: absolute;
+  right: 5px;
+  top: 5px;
+  width: 15px;
+  height: 15px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(0,0,0,.6);
+  opacity: 0;
+  transition: opacity .18s;
+}
+.slot:hover .slot__kill { opacity: 1; }
+.slot__kill::before,
+.slot__kill::after {
+  content: "";
+  position: absolute;
+  left: 50%; top: 50%;
+  width: 7.5px; height: 1.6px;
+  margin: -.8px 0 0 -3.75px;
+  border-radius: 1px;
+  background: #fff;
+}
+.slot__kill::before { transform: rotate(45deg); }
+.slot__kill::after  { transform: rotate(-45deg); }
+
+/* миниатюра шаблона — та же графика, что у слайдов на главной */
+.tpl-mini { position: absolute; inset: 0; padding: 8px; background: var(--ink); }
+.tpl-mini i { display: block; border-radius: 3px; background: #cfcfcf; }
+.tpl-mini .t-bar  { height: 6px; }
+.tpl-mini .t-box  { margin-top: 6px; height: 30px; background: var(--orange); }
+.tpl-mini .t-line { margin-top: 5px; height: 4px; }
+.tpl-mini .t-line.short { width: 60%; }
+
+/* ── промт ── */
+.prompt {
+  display: block;
+  width: 100%;
+  height: 218px;
+  padding: 0;
+  border: 0;
+  resize: none;
+  outline: none;
+  background: none;
+  font: inherit;
+  font-size: 16.3px;
+  line-height: 1.17;
+  color: var(--ink);
+}
+.prompt::placeholder { color: rgba(255,255,255,.34); }
+.go {
+  position: absolute;
+  right: 12px;
+  bottom: 11px;
+  height: 27px;
+  padding: 0 18px;
+  font-size: 12px;
+  box-shadow: 0 6px 18px rgba(221,94,17,.35);
+}
+.go:hover { transform: translateY(-1px); box-shadow: 0 9px 24px rgba(221,94,17,.45); }
+
+/* ══════════ Состояние 2: генерация ══════════ */
+.pane--gen > .gen {
+  position: absolute;
+  inset: 6.5px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  background: rgba(0,0,0,.28);
+  border: 0.5px solid rgba(255,255,255,.1);
+}
+/* Надпись ЦДС закрашивается по диагонали: под текстом лежит градиент,
+   у которого резкий стык белого и оранжевого едет по --fill. */
+.gen__logo {
+  font-size: 38px;
+  line-height: 1;
+  letter-spacing: -.3em;
+  padding-right: .3em;         /* компенсируем отрицательный трекинг */
+  background-image: linear-gradient(
+    118deg,
+    var(--orange) 0%,
+    var(--orange) calc(var(--fill, 0%) - 4%),
+    #ffffff calc(var(--fill, 0%) + 4%),
+    #ffffff 100%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+}
+.gen__word {
+  position: relative;
+  margin-top: 9px;
+  height: 14px;
+  display: flex;
+  align-items: center;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--orange);
+  white-space: nowrap;
+}
+.gen__caret {
+  width: 2px;
+  height: 11px;
+  margin-left: 1.5px;
+  background: var(--orange);
+  animation: caret 1s steps(2) infinite;
+}
+@keyframes caret { 50% { opacity: 0; } }
+.gen__dots { display: flex; align-items: flex-end; gap: 2.4px; margin-left: 3px; }
+.gen__dots b {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--orange);
+  animation: dot 1.05s ease-in-out infinite;
+}
+.gen__dots b:nth-child(2) { animation-delay: .14s; }
+.gen__dots b:nth-child(3) { animation-delay: .28s; }
+@keyframes dot {
+  0%, 60%, 100% { transform: translateY(0);    opacity: .45; }
+  30%           { transform: translateY(-4px); opacity: 1; }
+}
+
+/* ══════════ Состояние 3: демонстрация ══════════ */
+.rail { position: absolute; left: 19.7px; top: 17px; width: 105.7px; }
+.thumb {
+  position: relative;
+  display: block;
+  width: 105.7px;
+  height: 76.8px;
+  margin-bottom: 9.4px;
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  background: rgba(255,255,255,.06);
+  overflow: hidden;
+  cursor: pointer;
+  transition: box-shadow .2s, transform .2s;
+}
+.thumb:hover { transform: translateY(-1.5px); }
+.thumb.is-on { box-shadow: 0 0 0 2px var(--orange), 0 6px 18px rgba(221,94,17,.3); }
+.thumb:focus-visible { outline: 1.5px solid var(--orange); outline-offset: 3px; }
+
+.canvas {
+  position: absolute;
+  left: 136.1px;
+  top: 17.2px;
+  width: 516.3px;
+  height: 249.3px;
+  border-radius: 14px;
+  background: rgba(255,255,255,.06);
+  overflow: hidden;
+  box-shadow: 0 16px 40px rgba(0,0,0,.45);
+}
+
+/* макет слайда внутри миниатюры и холста (масштабируется через --k) */
+.deck-slide { position: absolute; inset: 0; background: var(--ink); }
+.deck-slide i, .deck-slide b { display: block; position: absolute; border-radius: calc(4px * var(--k)); }
+.deck-slide .d-bar  { left: 8%;  top: 12%; width: 54%; height: 9%;  background: #c9c9c9; }
+.deck-slide .d-box  { left: 8%;  top: 30%; width: 84%; height: 44%; background: var(--orange); }
+.deck-slide .d-line { left: 8%;  top: 80%; width: 70%; height: 5%;  background: #dcdcdc; }
+.deck-slide .d-line.short { top: 89%; width: 42%; }
+.deck-slide--b .d-box { width: 40%; }
+.deck-slide--b .d-box2 { left: 52%; top: 30%; width: 40%; height: 44%; background: #d4d4d4; }
+.deck-slide--c .d-box { top: 26%; height: 52%; background: #d4d4d4; }
+.deck-slide--c .d-num {
+  left: 8%; top: 82%; width: auto; height: auto;
+  font-size: calc(22px * var(--k));
+  line-height: 1;
+  color: var(--orange);
+  background: none;
+}
+
+/* ══════════ Свой курсор ══════════ */
+.cur,
+.cur__dot {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 90;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity .25s;
+  will-change: transform;
+}
+.cur {
+  width: 30px;
+  height: 30px;
+  margin: -15px 0 0 -15px;
+  border: 1px solid rgba(255,255,255,.5);
+  border-radius: 50%;
+  box-shadow: 0 0 12px rgba(0,0,0,.45);
+}
+.cur__dot {
+  width: 5px;
+  height: 5px;
+  margin: -2.5px 0 0 -2.5px;
+  border-radius: 50%;
+  background: var(--orange);
+}
+.cur.is-on { border-color: var(--orange); background: rgba(221,94,17,.12); }
+.cur.is-vis,
+.cur__dot.is-vis { opacity: 1; }
+
+html.has-cur,
+html.has-cur * { cursor: none !important; }
+
+@media (hover: none), (pointer: coarse) {
+  .cur, .cur__dot { display: none; }
+}
+
+/* скрытый контейнер SVG-фильтров */
+.fx { position: absolute; width: 0; height: 0; overflow: hidden; }
+
+@media (prefers-reduced-motion: reduce) {
+  .nav__lens, .acc-body, .acc-glass, .acc-menu, .acc-menu > *, .view {
+    transition-duration: .01s;
+  }
+  .gen__dots b, .gen__caret { animation: none; }
+}
