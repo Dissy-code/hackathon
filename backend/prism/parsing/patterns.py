@@ -50,6 +50,8 @@ class Slot(BaseModel):
     styles: list[RunStyle] = Field(default_factory=list)   # стиль каждого абзаца-образца
     backdrop: str | None = None
     autofit: str | None = None
+    insets: tuple[int, int, int, int] | None = None      # внутренние отступы текста l, t, r, b (EMU)
+    table_rows: int | None = None                           # у слота-таблицы: сколько строк в образце
 
 
 class RepeatGroup(BaseModel):
@@ -68,6 +70,17 @@ class RepeatGroup(BaseModel):
         return [s.kind.value for s in self.items[0]] if self.items else []
 
 
+class Picture(BaseModel):
+    """Крупная картинка-декорация: 3D-объект, пример графика, иллюстрация. Не слот, но занимает место —
+    заголовок не должен на неё наезжать, а пример графика заменяется настоящим."""
+
+    shape_id: int
+    bbox: BBox
+    cutout: bool                               # с прозрачностью (вырезанный объект), а не прямоугольное фото
+    from_layout: bool = False                  # нарисована в макете: мешает, но удалить со слайда нельзя
+    bleed: bool = False                        # выходит за край слайда (фоновая декорация)
+
+
 class Pattern(BaseModel):
     id: str                                    # slide:7 | layout:<name>
     source: str                                # slide | layout
@@ -79,6 +92,8 @@ class Pattern(BaseModel):
     slots: list[Slot]                          # одиночные слоты вне групп
     groups: list[RepeatGroup]
     decor: list[int]                           # id фигур, которые копируются как есть
+    pictures: list[Picture] = Field(default_factory=list)
+    title_plate: Picture | None = None         # плашка под заголовком (подгоняется под длину текста)
     text_chars: int                            # объём текста в образце
 
 
@@ -147,6 +162,8 @@ def _slot(shape: Shape, kind: SlotKind, slide: SlideRaw, raw: TemplateRaw) -> Sl
         styles=[p.style for p in shape.paragraphs if p.text.strip()] or [p.style for p in shape.paragraphs[:1]],
         backdrop=backdrop(slide, shape) if shape.paragraphs else None,
         autofit=shape.autofit,
+        insets=shape.insets,
+        table_rows=shape.table_size[0] if shape.table_size else None,
     )
 
 
@@ -389,6 +406,11 @@ def _fill_gaps(items: list[list[Shape]], free: list[Shape], used: set[int], tol:
                         break
 
 
+def _layout_shapes(raw: TemplateRaw, slide: SlideRaw) -> list[Shape]:
+    layout = next((lay for lay in raw.layouts if lay.name == slide.layout and lay.master == slide.master), None)
+    return layout.shapes if layout else []
+
+
 def _drawn_in_layout(boxes: list[BBox], raw: TemplateRaw, slide: SlideRaw) -> bool:
     """Карточки нарисованы в макете (картинки/подложки), а на слайде только текст поверх — менять число нельзя."""
     layout = next((lay for lay in raw.layouts if lay.name == slide.layout and lay.master == slide.master), None)
@@ -403,13 +425,63 @@ def _drawn_in_layout(boxes: list[BBox], raw: TemplateRaw, slide: SlideRaw) -> bo
 # ── паттерн слайда ─────────────────────────────────────────────────────────
 
 
+def _title_plate(slide: SlideRaw, title: Shape) -> Shape | None:
+    """Залитая фигура под заголовком, подогнанная под образец («таблетка» с текстом внутри)."""
+    tb = title.bbox
+    for s in sorted(slide.shapes, key=lambda s: -s.z):
+        if s.z >= title.z or s.kind != ShapeKind.shape or s.fill_kind not in ("solid", "gradient"):
+            continue
+        b = s.bbox
+        overlap = intersection(b, tb)
+        # плашка обнимает начало заголовка и сопоставима с ним по высоте, а не подложка всего слайда
+        if overlap >= 0.5 * min(b.area, tb.area) and b.h <= 2.5 * tb.h and b.x <= tb.x + tb.h and b.w < tb.w * 1.5:
+            return s
+    return None
+
+
+def _safe_title_box(raw: TemplateRaw, slide: SlideRaw, title: Shape, plate: Shape | None) -> BBox:
+    """Рамка заголовка минус всё видимое, что в неё залезает (логотип макета сверху, декор справа).
+    В шаблоне рамку рисовали под короткий образец, и пересечения не было видно."""
+    b = _clip(title.bbox, raw)
+    top, bottom, left, right = b.y, b.bottom, b.x, b.right
+    gap = raw.slide_h // 80
+    slide_area = raw.slide_w * raw.slide_h
+    candidates = [s for s in slide.shapes if s is not title and s.kind != ShapeKind.group]
+    candidates += [s for s in _layout_shapes(raw, slide) if not s.placeholder]
+    candidates += [s for s in raw.masters[slide.master].shapes if not s.placeholder]   # логотипы часто в мастере
+    for s in candidates:
+        visible = s.kind in (ShapeKind.picture, ShapeKind.text) or s.fill_kind in ("solid", "gradient", "picture")
+        if not visible or (plate is not None and s.id == plate.id) or s.bbox.area > 0.5 * slide_area:
+            continue
+        o = _clip(s.bbox, raw)
+        if intersection(o, BBox(x=left, y=top, w=right - left, h=bottom - top)) <= 0:
+            continue
+        if o.x > left + (right - left) * 0.4:             # справа — сужаем
+            right = min(right, o.x - gap)
+        elif o.bottom < top + (bottom - top) * 0.5:       # в верхней половине — опускаем верх
+            top = max(top, o.bottom + gap)
+        elif o.y > top + (bottom - top) * 0.5:            # в нижней половине — поднимаем низ
+            bottom = min(bottom, o.y - gap)
+    safe = BBox(x=left, y=top, w=right - left, h=bottom - top)
+    return safe if safe.w > 0.4 * b.w and safe.h > 0.3 * b.h else b
+
+
 def _pick_title(shapes: list[Shape], raw: TemplateRaw) -> Shape | None:
     ph = [s for s in shapes if s.placeholder and s.placeholder.type in _TITLE_PH]
     if ph:
         return ph[0]
-    # без плейсхолдера: самый крупный текст в верхней четверти слайда
-    top = [s for s in shapes if s.kind == ShapeKind.text and s.bbox.y < raw.slide_h * 0.25 and s.paragraphs]
-    return max(top, key=lambda s: s.paragraphs[0].style.size_pt or 0, default=None)
+    # без плейсхолдера: самый крупный текст в верхней четверти слайда, а если там пусто (титулы,
+    # разделители часто держат заголовок по центру) — самый крупный текст слайда
+    texts = [s for s in shapes if s.kind == ShapeKind.text and s.paragraphs]
+
+    def size(s: Shape) -> float:
+        return s.paragraphs[0].style.size_pt or 0
+
+    top = [s for s in texts if s.bbox.y < raw.slide_h * 0.25]
+    if top:
+        return max(top, key=size)
+    biggest = max(texts, key=size, default=None)
+    return biggest if biggest is not None and (size(biggest) >= 20 or len(texts) == 1) else None
 
 
 def build_pattern(raw: TemplateRaw, slide: SlideRaw, tokens: DesignTokens) -> Pattern:
@@ -421,8 +493,11 @@ def build_pattern(raw: TemplateRaw, slide: SlideRaw, tokens: DesignTokens) -> Pa
     kinds: dict[int, SlotKind] = {}
     for s in shapes:
         off_slide = s.bbox.x >= raw.slide_w or s.bbox.y >= raw.slide_h or s.bbox.right <= 0 or s.bbox.bottom <= 0
-        bleed = is_bleed(s.bbox, raw.slide_w, raw.slide_h) and s.kind != ShapeKind.text
-        if s is title or off_slide or bleed or s.bbox.area > MAX_CANDIDATE_AREA * slide_area:
+        # таблицы и графики законно занимают полслайда и могут чуть выходить за край — их не отсеиваем
+        data_frame = s.kind in (ShapeKind.table, ShapeKind.chart)
+        bleed = is_bleed(s.bbox, raw.slide_w, raw.slide_h) and s.kind != ShapeKind.text and not data_frame
+        too_big = s.bbox.area > MAX_CANDIDATE_AREA * slide_area and not data_frame
+        if s is title or off_slide or bleed or too_big:
             continue
         kind = _shape_kind(s, raw, tokens)
         if kind is not None:
@@ -433,12 +508,31 @@ def build_pattern(raw: TemplateRaw, slide: SlideRaw, tokens: DesignTokens) -> Pa
                if s.id in kinds and s.id not in used and kinds[s.id] != SlotKind.surface]
     slot_ids = used | {s.shape_id for s in singles} | ({title.id} if title else set())
     bg = slide.background.color
+    plate = _title_plate(slide, title) if title else None
+    title_slot = None
+    if title:
+        title_slot = _slot(title, SlotKind.title, slide, raw)
+        title_slot.bbox = _safe_title_box(raw, slide, title, plate)
     return Pattern(
         id=f"slide:{slide.index}", source="slide", slide_index=slide.index, layout=slide.layout,
         background=bg, dark=bool(bg and any(b.dark for b in tokens.backgrounds if b.color == bg)),
-        title=_slot(title, SlotKind.title, slide, raw) if title else None,
+        title=title_slot,
         slots=sorted(singles, key=lambda s: (s.bbox.y, s.bbox.x)),
         groups=groups,
         decor=[s.id for s in slide.shapes if s.id not in slot_ids and s.kind != ShapeKind.group],
+        pictures=[
+            Picture(shape_id=s.id, bbox=_clip(s.bbox, raw), cutout=bool(s.image and (s.image.opaque_ratio or 1) < 0.9),
+                    bleed=is_bleed(s.bbox, raw.slide_w, raw.slide_h))
+            for s in slide.shapes
+            if s.kind == ShapeKind.picture and s.id not in slot_ids and s.parent_group is None
+            and _clip(s.bbox, raw).area >= 0.06 * slide_area and s.bbox.area < 0.9 * slide_area
+        ] + [
+            Picture(shape_id=s.id, bbox=_clip(s.bbox, raw), cutout=True, from_layout=True,
+                    bleed=is_bleed(s.bbox, raw.slide_w, raw.slide_h))
+            for s in _layout_shapes(raw, slide)
+            if s.kind == ShapeKind.picture and not s.placeholder and _clip(s.bbox, raw).area >= 0.06 * slide_area
+            and s.bbox.area < 0.9 * slide_area
+        ],
         text_chars=sum(len(s.text.strip()) for s in slide.shapes if not s.prompt_text),
+        title_plate=Picture(shape_id=plate.id, bbox=plate.bbox, cutout=False) if plate else None,
     )

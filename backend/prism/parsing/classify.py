@@ -38,6 +38,7 @@ _DATE_WORD = re.compile(r"\b(дата|январ\w*|феврал\w*|март\w*|
 _CLOSING = re.compile(r"спасибо|вопрос|q&a|контакт|thank", re.IGNORECASE)
 _AGENDA = re.compile(r"оглавлен|содержан|agenda|план", re.IGNORECASE)
 _PERSON = re.compile(r"имя|фамили|должност|роль в команде|спикер", re.IGNORECASE)
+_CHART_WORD = re.compile(r"график|диаграм|chart|гистограм|динамик", re.IGNORECASE)
 
 
 class Usage(StrEnum):
@@ -95,6 +96,10 @@ def heuristic_kind(p: Pattern, position: int, total: int) -> SlideKind:
 
     if SlotKind.chart in kinds:
         return SlideKind.chart
+    if p.pictures and _CHART_WORD.search(all_text):
+        return SlideKind.chart                  # пример графика вставлен картинкой — место под настоящий
+    if p.pictures and not p.groups and len(texts) <= 2 and any(not pic.cutout for pic in p.pictures):
+        return SlideKind.image                  # крупное фото/скриншот с подписью
     if SlotKind.table in kinds:
         return SlideKind.table
     if _CLOSING.search(title) or (position == total and _CLOSING.search(all_text)):

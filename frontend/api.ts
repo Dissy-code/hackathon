@@ -50,3 +50,19 @@ export function describeTemplate(t: TemplateSummary): string {
   const font = t.fonts[0] ? ` · ${t.fonts[0]}` : '';
   return `${n} ${plural(n, 'образец', 'образца', 'образцов')}${font}`;
 }
+
+/* ── Аккаунт ── сессия живёт в HttpOnly-cookie, скрипту её не видно */
+export type Me = { id: number; name: string; email: string; templates: number; decks: number };
+
+export async function fetchMe(): Promise<Me | null> {
+  try {
+    const r = await fetch('/api/auth/me');
+    return r.ok ? r.json() : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function logout(): Promise<void> {
+  await fetch('/api/auth/logout', { method: 'POST' }).catch(() => undefined);
+}

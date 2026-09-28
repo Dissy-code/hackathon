@@ -21,7 +21,7 @@ import {
   type ChangeEvent, type CSSProperties, type PointerEvent as ReactPointerEvent,
 } from 'react';
 import './configurator.css';
-import { TPL_ACCEPT, describeTemplate, uploadTemplate } from './api.ts';
+import { TPL_ACCEPT, describeTemplate, fetchMe, logout, plural, uploadTemplate, type Me } from './api.ts';
 
 /* ── Константы композиции ── */
 const CW = 750;            // ширина композиции
@@ -182,6 +182,7 @@ export default function Configurator() {
   const [tpl, setTpl] = useState<Attachment[]>([]);
   const [img, setImg] = useState<Attachment[]>([]);
   const [slide, setSlide] = useState(0);
+  const [me, setMe] = useState<Me | null>(null);
   const deckReady = useRef(false);
 
   /* Размер сцены нужен и обработчикам, и кадровому циклу — держим в ref. */
@@ -462,6 +463,15 @@ export default function Configurator() {
   };
 
   /* ══════════ Аккаунт ══════════ */
+  useEffect(() => { fetchMe().then(setMe); }, []);
+
+  const onAccCta = async () => {
+    if (!me) { location.href = 'authorize.html?next=configurator.html'; return; }
+    await logout();
+    setMe(null);
+    setAccOpen(false);
+  };
+
   useEffect(() => {
     if (!accOpen) return;
     const away = (e: Event) => {
@@ -497,7 +507,10 @@ export default function Configurator() {
     setTpl((list) => [...list, ...added.map((a) => a.item)]);
     added.forEach(({ file, item }) => {
       uploadTemplate(file)
-        .then((t) => patch(item.key, { state: 'ok', id: t.id, note: describeTemplate(t), colors: t.colors }))
+        .then((t) => {
+          patch(item.key, { state: 'ok', id: t.id, note: describeTemplate(t), colors: t.colors });
+          if (me) fetchMe().then(setMe);             // счётчик шаблонов в меню аккаунта
+        })
         .catch((err: Error) => patch(item.key, { state: 'err', note: err.message }));
     });
   };
@@ -581,14 +594,17 @@ export default function Configurator() {
           </div>
           <i className="acc-glass" aria-hidden="true" />
           <div className="acc-menu" id="accMenu" role="dialog" aria-label="Аккаунт">
-            <p className="acc-name">Гость</p>
-            <p className="acc-mail">войдите, чтобы сохранять колоды</p>
+            <p className="acc-name">{me ? me.name : 'Гость'}</p>
+            <p className="acc-mail">{me ? me.email : 'войдите, чтобы сохранять колоды'}</p>
             <ul className="acc-list">
-              <li><span>Мои презентации</span><b>12</b></li>
-              <li><span>Мои шаблоны</span><b>3</b></li>
+              <li><span>Мои презентации</span><b>{me ? me.decks : '—'}</b></li>
+              <li><span>Мои шаблоны</span><b>{me ? me.templates : '—'}</b></li>
               <li><span>Формат по умолчанию</span><b>pptx</b></li>
             </ul>
-            <button className="btn acc-cta" type="button">Войти</button>
+            <button className="btn acc-cta" type="button" onClick={onAccCta}
+                    title={me ? `${me.templates} ${plural(me.templates, 'шаблон', 'шаблона', 'шаблонов')} в аккаунте` : undefined}>
+              {me ? 'Выйти' : 'Войти'}
+            </button>
           </div>
 
           {/* ══ Окно ══ */}

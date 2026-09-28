@@ -1,7 +1,7 @@
 """Проверка возможностей LLM-провайдера, от которых зависит пайплайн.
 
-    python scripts/smoke_llm.py                   # профиль из PRISM_PROFILE / конфига
-    python scripts/smoke_llm.py --profile final --only json_schema,tools
+    python scripts/smoke_llm.py                   # провайдер и модель из backend/.env
+    python scripts/smoke_llm.py --only json_schema,tools
 
 Отчёт пишется в data/smoke/<model>-<время>.json — его стоит приложить к MODELS.md.
 """
@@ -204,11 +204,11 @@ CHECKS = ["basic", "max_tokens", "thinking_toggle", "json_schema", "tools", "vis
 
 
 async def run(args: argparse.Namespace) -> int:
-    cfg = load_config(args.config, profile=args.profile)
+    cfg = load_config(args.config)
     smoke = Smoke(LLMFactory(cfg), SkillRegistry(pins=cfg.skills), args)
     selected = args.only.split(",") if args.only else CHECKS
     text_role = cfg.resolve_role("slide_writer")
-    print(f"профиль {cfg.profile}: {text_role.model} @ {text_role.provider.base_url}\n")
+    print(f"{text_role.model} @ {text_role.llm.base_url}\n")
 
     results: list[CheckResult] = []
     for name in selected:
@@ -226,7 +226,7 @@ async def run(args: argparse.Namespace) -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
     out = out_dir / f"{text_role.model}-{datetime.now(UTC):%Y%m%d-%H%M%S}.json"
     out.write_text(json.dumps({
-        "profile": cfg.profile, "model": text_role.model, "base_url": text_role.provider.base_url,
+        "model": text_role.model, "base_url": text_role.llm.base_url,
         "results": [asdict(r) for r in results],
     }, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"\nотчёт: {out.relative_to(BACKEND_DIR)}")
@@ -236,7 +236,6 @@ async def run(args: argparse.Namespace) -> int:
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--config", default=None)
-    p.add_argument("--profile", default=None)
     p.add_argument("--only", default=None, help=f"через запятую из: {','.join(CHECKS)}")
     p.add_argument("--ctx-tokens", type=int, default=16000, help="размер промпта для long_context")
     p.add_argument("--parallel", type=int, default=8, help="число одновременных запросов")

@@ -231,7 +231,33 @@
     acc(false);
   });
   addEventListener('keydown', (e) => { if (e.key === 'Escape') acc(false); });
-  accMenu.querySelector('.acc-cta').addEventListener('click', (e) => e.preventDefault());
+  /* Аккаунт: гость видит «Войти», пользователь — имя, почту, счётчики и «Выйти».
+     Сессия — HttpOnly-cookie, её проверяет /api/auth/me. */
+  const accCta = accMenu.querySelector('.acc-cta');
+  let me = null;
+  function renderMe() {
+    accMenu.querySelector('.acc-name').textContent = me ? me.name : 'Гость';
+    accMenu.querySelector('.acc-mail').textContent = me ? me.email : 'войдите, чтобы сохранять колоды';
+    const counts = accMenu.querySelectorAll('.acc-list b');
+    counts[0].textContent = me ? me.decks : '—';
+    counts[1].textContent = me ? me.templates : '—';
+    accCta.textContent = me ? 'Выйти' : 'Войти';
+  }
+  function loadMe() {
+    return fetch('/api/auth/me')
+      .then((r) => (r.ok ? r.json() : null))
+      .catch(() => null)
+      .then((data) => { me = data; renderMe(); });
+  }
+  accCta.addEventListener('click', async (e) => {
+    e.preventDefault();
+    if (!me) { location.href = 'authorize.html?next=configurator.html'; return; }
+    await fetch('/api/auth/logout', { method: 'POST' }).catch(() => undefined);
+    me = null;
+    renderMe();
+    acc(false);
+  });
+  loadMe();
 
   /* ══════════ Вложения ══════════
      До трёх шаблонов и до трёх картинок. Пока есть свободное место,
@@ -346,6 +372,7 @@
             state: 'ok', id: t.id, colors: t.colors,
             note: `${t.patterns} ${plural(t.patterns, 'образец', 'образца', 'образцов')}${t.fonts[0] ? ' · ' + t.fonts[0] : ''}`,
           }))
+          .then(() => { if (me) loadMe(); })             // счётчик шаблонов в меню аккаунта
           .catch((err) => Object.assign(item, { state: 'err', note: err.message }))
           .finally(() => fill(tplSlots, tpl, 'tpl'));
       });

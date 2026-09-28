@@ -217,8 +217,9 @@ def _paragraphs(shape: BaseShape, styles: TextStyles, ctx: ColorContext) -> list
             align=_first(layer.get("algn") for layer in layers),
             style=base, run_styles=run_styles,
         ))
-    # хвостовые пустые абзацы не несут информации
-    while out and not out[-1].text.strip():
+    # хвостовые пустые абзацы не несут информации — но один оставляем: у пустого плейсхолдера
+    # это единственный носитель унаследованного стиля (кегль, цвет), по нему считается подгонка
+    while len(out) > 1 and not out[-1].text.strip():
         out.pop()
     return out
 
@@ -300,9 +301,15 @@ class Extractor:
             if sh.is_placeholder and not any(p.text.strip() for p in paragraphs):
                 base = getattr(sh, "_base_placeholder", None)
                 if base is not None and base.has_text_frame:
-                    paragraphs, prompt = _paragraphs(base, styles, ctx), True
+                    base_paragraphs = _paragraphs(base, styles, ctx)
+                    if any(p.text.strip() for p in base_paragraphs):
+                        paragraphs, prompt = base_paragraphs, True
             has_text = any(p.text.strip() for p in paragraphs) and not prompt
-            kind, _ = _kind(el, has_text or prompt)
+            # пустой текстовый плейсхолдер (заголовок, подзаголовок, тело) — тоже место под текст
+            ph_kind = str(el.ph_type).split(" ")[0].lower() if sh.is_placeholder else ""
+            empty_text_ph = sh.is_placeholder and sh.has_text_frame and ph_kind not in (
+                "picture", "chart", "table", "media_clip", "slide_number", "date", "footer", "slide_image")
+            kind, _ = _kind(el, has_text or prompt or empty_text_ph)
 
             xfrm = _xfrm(el)
             if xfrm is not None and xfrm.find("a:off", NS) is not None and parent is not None:
@@ -353,6 +360,12 @@ class Extractor:
             if kind == ShapeKind.table:
                 tbl = sh.table
                 item.table_size = (len(tbl.rows), len(tbl.columns))
+                # рамка graphicFrame часто не совпадает с таблицей: реальный размер — сумма колонок и строк
+                grid_w = sum(c.width for c in tbl.columns)
+                grid_h = sum(r.height for r in tbl.rows)
+                if grid_w and grid_h:
+                    item.bbox = BBox(x=item.bbox.x, y=item.bbox.y, w=max(item.bbox.w, grid_w),
+                                     h=max(item.bbox.h, grid_h))
             elif kind == ShapeKind.chart:
                 chart = sh.chart
                 item.chart_type = str(chart.chart_type).split(" ")[0]

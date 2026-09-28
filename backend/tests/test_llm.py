@@ -7,7 +7,7 @@ from prism.config import load_config
 from prism.llm.client import LLMFactory, strip_think
 from prism.llm.structured import StructuredOutputError, _extract_json, ainvoke_structured
 
-ENV = {"OWUI_BASE_URL": "http://owui/api", "OWUI_API_KEY": "sk-test", "PRISM_PROFILE": "dev"}
+ENV = {"LLM_BASE_URL": "http://llm/v1", "LLM_API_KEY": "sk-test", "LLM_MODEL": "m"}
 
 
 @pytest.mark.parametrize(
@@ -37,6 +37,13 @@ def test_factory_passes_thinking_switch_and_top_k():
     assert f.for_role("slide_writer").extra_body["chat_template_kwargs"] == {"enable_thinking": False}
     assert f.for_role("slide_writer") is f.for_role("slide_writer")
     assert f.for_role("slide_writer", max_tokens=5).max_tokens == 5
+
+
+def test_openrouter_style_uses_reasoning_switch():
+    f = LLMFactory(load_config(env=ENV | {"LLM_API_STYLE": "openrouter"}))
+    assert f.for_role("slide_writer").extra_body == {"reasoning": {"enabled": False, "exclude": True}}
+    assert f.for_role("outline_planner").extra_body["reasoning"]["enabled"] is True
+    assert LLMFactory(load_config(env=ENV | {"LLM_API_STYLE": "plain"})).for_role("slide_writer").extra_body == {}
 
 
 class Point(BaseModel):

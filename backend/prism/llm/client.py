@@ -20,22 +20,28 @@ def strip_think(text: str) -> str:
     return text.strip()
 
 
+def _extra_body(style: str, top_k: int, think: bool) -> dict:
+    """Нестандартные параметры — у каждого семейства серверов свои."""
+    if style == "vllm":
+        return {"top_k": top_k, "chat_template_kwargs": {"enable_thinking": think}}
+    if style == "openrouter":
+        # exclude: не присылать сами рассуждения — нам нужен только ответ
+        return {"reasoning": {"enabled": think, "exclude": True}}
+    return {}
+
+
 def build_chat_model(r: ResolvedRole, **overrides) -> ChatOpenAI:
     params = r.model_dump(include={"temperature", "top_p", "top_k", "think", "max_tokens"}) | overrides
     return ChatOpenAI(
         model=r.model,
-        base_url=r.provider.base_url,
-        api_key=r.provider.api_key,
-        timeout=r.provider.timeout_s,
-        max_retries=r.provider.max_retries,
+        base_url=r.llm.base_url,
+        api_key=r.llm.api_key,
+        timeout=r.llm.timeout_s,
+        max_retries=r.llm.max_retries,
         temperature=params["temperature"],
         top_p=params["top_p"],
         max_tokens=params["max_tokens"],
-        # Не-OpenAI параметры: top_k и переключатель размышлений в chat template (vLLM / llama.cpp / SGLang)
-        extra_body={
-            "top_k": params["top_k"],
-            "chat_template_kwargs": {"enable_thinking": params["think"]},
-        },
+        extra_body=_extra_body(r.llm.api_style, params["top_k"], params["think"]),
     )
 
 

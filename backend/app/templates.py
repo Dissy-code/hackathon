@@ -13,6 +13,7 @@ from fastapi import APIRouter, HTTPException, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 
+from app.auth import Db, OptionalUser
 from prism.config import BACKEND_DIR
 from prism.parsing.spec import SPECS_DIR, TemplateSpec, parse_template_sync
 
@@ -68,7 +69,7 @@ def _meta_path(template_id: str) -> Path:
 
 
 @router.post("", response_model=TemplateSummary)
-async def upload_template(file: UploadFile) -> TemplateSummary:
+async def upload_template(file: UploadFile, db: Db, user: OptionalUser) -> TemplateSummary:
     name = Path(file.filename or "template").name
     ext = Path(name).suffix.lower()
     if ext in PLANNED:
@@ -90,8 +91,27 @@ async def upload_template(file: UploadFile) -> TemplateSummary:
     except (zipfile.BadZipFile, KeyError, ValueError) as e:
         raise HTTPException(422, f"Не удалось разобрать шаблон: {e}") from e
 
-    _meta_path(spec.sha256[:16]).write_text(json.dumps({"name": name, "format": ext[1:]}), encoding="utf-8")
+    template_id = spec.sha256[:16]
+    _meta_path(template_id).write_text(json.dumps({"name": name, "format": ext[1:]}), encoding="utf-8")
+    if user is not None:  # гость тоже может работать, но в историю шаблон попадает только у аккаунта
+        db.execute("INSERT OR REPLACE INTO user_templates (user_id, template_id, name, format) VALUES (?, ?, ?, ?)",
+                   (user.id, template_id, name, ext[1:]))
     return _summary(spec, name, ext[1:])
+
+
+@router.get("", response_model=list[TemplateSummary])
+async def my_templates(db: Db, user: OptionalUser) -> list[TemplateSummary]:
+    """Шаблоны, которые пользователь загружал раньше (гостю — пусто)."""
+    if user is None:
+        return []
+    rows = db.execute("SELECT * FROM user_templates WHERE user_id = ? ORDER BY created_at DESC", (user.id,))
+    out = []
+    for row in rows:
+        try:
+            out.append(_summary(load_spec(row["template_id"]), row["name"], row["format"]))
+        except HTTPException:
+            continue  # кеш разбора удалён — шаблон нужно загрузить заново
+    return out
 
 
 def load_spec(template_id: str) -> TemplateSpec:

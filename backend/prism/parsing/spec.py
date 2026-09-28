@@ -30,6 +30,8 @@ from prism.parsing.tokens import DesignTokens, build_tokens
 from prism.planning.schemas import SlideKind
 
 SPECS_DIR = BACKEND_DIR / "data" / "specs"
+# повышать при изменении парсера: кеш со старой версией разбора пересобирается автоматически
+SPEC_VERSION = 11
 
 
 class Asset(BaseModel):
@@ -51,6 +53,7 @@ class PatternSpec(BaseModel):
 
 
 class TemplateSpec(BaseModel):
+    version: int = 0
     source: str
     sha256: str
     tokens: DesignTokens
@@ -118,7 +121,7 @@ def build_spec(raw: TemplateRaw, classification: TemplateClassification,
     pattern_idx = [i for i, c in by_index.items() if c.usage == Usage.pattern]
     tokens = build_tokens(raw, pattern_idx or None)
     return TemplateSpec(
-        source=raw.source, sha256=raw.sha256, tokens=tokens,
+        version=SPEC_VERSION, source=raw.source, sha256=raw.sha256, tokens=tokens,
         patterns=[
             PatternSpec(pattern=patterns[i], kind=by_index[i].kind or SlideKind.bullets,
                         purpose=by_index[i].purpose, classified_by=by_index[i].source)
@@ -141,7 +144,10 @@ def _save(path: Path, raw: TemplateRaw, spec: TemplateSpec) -> TemplateSpec:
 
 def _cached(raw: TemplateRaw) -> TemplateSpec | None:
     cached = SPECS_DIR / raw.sha256[:16] / "spec.json"
-    return TemplateSpec.model_validate_json(cached.read_text(encoding="utf-8")) if cached.exists() else None
+    if not cached.exists():
+        return None
+    spec = TemplateSpec.model_validate_json(cached.read_text(encoding="utf-8"))
+    return spec if spec.version == SPEC_VERSION else None
 
 
 def _patterns(raw: TemplateRaw) -> dict[int, Pattern]:

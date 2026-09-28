@@ -7,6 +7,9 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
+from app.auth import router as auth_router
+from app.db import init_db
+from app.decks import router as decks_router
 from app.templates import router as templates_router
 from prism.config import BACKEND_DIR, load_config
 from prism.llm.client import LLMFactory
@@ -17,6 +20,7 @@ FRONTEND_DIR = BACKEND_DIR.parent / "frontend"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    init_db()
     config = load_config()
     app.state.config = config
     app.state.llm = LLMFactory(config)
@@ -25,7 +29,9 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="ЦДС", version="0.1.0", lifespan=lifespan)
+app.include_router(auth_router)
 app.include_router(templates_router)
+app.include_router(decks_router)
 
 
 @app.get("/api/health")
@@ -33,8 +39,8 @@ async def health() -> dict:
     cfg = app.state.config
     return {
         "status": "ok",
-        "profile": cfg.profile,
-        "models": {slot: ref.name for slot, ref in cfg.active.models.items()},
+        "base_url": cfg.llm.base_url,
+        "models": {slot: cfg.llm.model(slot) for slot in cfg.llm.models},
         "skills": [app.state.skills.get(n).ref for n in app.state.skills.names()],
     }
 

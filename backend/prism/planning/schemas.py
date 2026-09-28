@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from enum import StrEnum
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -51,3 +52,44 @@ class DeckOutline(BaseModel):
     audience: str
     storyline: str = Field(description="Логика повествования колоды в 1-2 предложениях")
     slides: list[SlidePlan] = Field(min_length=3, max_length=40)
+
+
+# ── Содержимое слайда: не зависит от шаблона ───────────────────────────────
+# Карточки, шаги процесса, KPI, точки таймлайна и пункты списка — всё это items:
+# вёрстка раскладывает их по повторяющейся группе выбранного образца.
+
+
+class Item(BaseModel):
+    heading: str | None = Field(default=None, description="Заголовок карточки/шага, 1-4 слова")
+    text: str | None = Field(default=None, description="Пояснение, до 15 слов")
+    value: str | None = Field(default=None, description="Число или показатель: «38%», «3 200», «2026»")
+
+
+class ChartSeries(BaseModel):
+    name: str
+    values: list[float]
+
+
+class ChartData(BaseModel):
+    type: Literal["column", "bar", "line", "pie", "doughnut"] = "column"
+    categories: list[str]
+    series: list[ChartSeries] = Field(max_length=5)
+    unit: str | None = None
+
+
+class TableData(BaseModel):
+    columns: list[str] = Field(max_length=5)
+    rows: list[list[str]] = Field(max_length=7)
+
+
+class SlideContent(BaseModel):
+    kind: SlideKind
+    title: str
+    subtitle: str | None = Field(default=None, description="Подзаголовок или ключевая мысль")
+    items: list[Item] = Field(default_factory=list, max_length=8)
+    chart: ChartData | None = None
+    table: TableData | None = None
+    quote: str | None = None
+    author: str | None = None
+    image: str | None = Field(default=None, description="id картинки пользователя, если она к месту")
+    notes: str = Field(default="", description="Заметки спикера")

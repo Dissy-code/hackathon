@@ -63,7 +63,7 @@ def test_fingerprint_changes_with_content(tmp_path):
 
 
 def test_repo_skills_load_and_reference_known_roles():
-    cfg = load_config(env={"OWUI_BASE_URL": "x", "OWUI_API_KEY": "y", "PRISM_PROFILE": "dev"})
+    cfg = load_config(env={"LLM_BASE_URL": "x", "LLM_API_KEY": "y", "LLM_MODEL": "m"})
     reg = SkillRegistry()
     for name in reg.names():
         skill = reg.get(name)

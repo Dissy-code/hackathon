@@ -339,6 +339,18 @@ body{
 .submit:hover::after{ transform: translateX(120%); }
 .submit span{ position: relative; z-index: 1; }
 
+/* ── Ошибка формы ── */
+.form__err{
+  margin: 0;
+  font-family: var(--font-body);
+  font-weight: 300;
+  font-size: 11.5px;
+  line-height: 1.35;
+  color: #ff7a6b;
+}
+.form__err:empty{ display: none; }
+.submit[disabled]{ opacity: .6; transform: none; }
+
 /* ── Подвал карточки ── */
 .foot{
   margin-top: 18px;
@@ -446,6 +458,7 @@ html.has-cur, html.has-cur *{ cursor: none !important; }
         </label>
         <a class="forgot" href="#">Забыли пароль?</a>
       </div>
+      <p class="form__err" role="alert"></p>
       <button class="submit" type="submit"><span>Войти</span></button>
     </form>
 
@@ -463,6 +476,7 @@ html.has-cur, html.has-cur *{ cursor: none !important; }
         <input class="field__input" type="password" id="su-pass" name="password" placeholder=" " required minlength="6" autocomplete="new-password">
         <label class="field__label" for="su-pass">Пароль</label>
       </div>
+      <p class="form__err" role="alert"></p>
       <button class="submit" type="submit"><span>Создать аккаунт</span></button>
     </form>
 
@@ -614,17 +628,64 @@ function setMode(mode){
 pillBtns.forEach(b => b.addEventListener('click', () => setMode(b.dataset.mode)));
 flip.addEventListener('click', (e) => { e.preventDefault(); setMode('signup'); });
 
-/* ── Отправка формы (демо) ── */
+/* ── Отправка формы ──
+   Сессия приходит HttpOnly-cookie, скрипту её видеть не нужно. После входа —
+   туда, откуда пришли (?next=…), иначе в конфигуратор. */
+const next = (() => {
+  const n = new URLSearchParams(location.search).get('next') || '';
+  return /^[a-z0-9_-]+\.html$/i.test(n) ? n : 'configurator.html';   // только свои страницы
+})();
+
+async function send(url, payload){
+  let r;
+  try {
+    r = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+  } catch { throw new Error('Сервер недоступен — попробуйте ещё раз'); }
+  const data = await r.json().catch(() => null);
+  if (!r.ok){
+    const d = data && data.detail;
+    // ошибки валидации pydantic приходят списком — показываем общий текст
+    throw new Error(typeof d === 'string' ? d : 'Проверьте поля формы');
+  }
+  return data;
+}
+
 [formSignin, formSignup].forEach(form => {
-  form.addEventListener('submit', (e) => {
+  const err = form.querySelector('.form__err');
+  const btn = form.querySelector('.submit');
+  const label = btn.querySelector('span');
+  form.addEventListener('input', () => { err.textContent = ''; });
+  form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const btn = form.querySelector('.submit span');
-    const orig = btn.textContent;
-    btn.textContent = '…';
-    setTimeout(() => {
-      btn.textContent = 'Готово ✓';
-      setTimeout(() => { btn.textContent = orig; }, 1400);
-    }, 700);
+    err.textContent = '';
+    const f = new FormData(form);
+    const signup = form === formSignup;
+    const email = String(f.get('email') || '').trim();
+    const password = String(f.get('password') || '');
+    if (!email || !password || (signup && !String(f.get('name') || '').trim())){
+      err.textContent = 'Заполните все поля';
+      return;
+    }
+    if (password.length < 6){ err.textContent = 'Пароль — не короче 6 символов'; return; }
+
+    const orig = label.textContent;
+    btn.disabled = true;
+    label.textContent = '…';
+    try {
+      await send(signup ? '/api/auth/register' : '/api/auth/login', signup
+        ? { name: String(f.get('name')).trim(), email, password, remember: true }
+        : { email, password, remember: f.get('remember') === 'on' });
+      label.textContent = 'Готово ✓';
+      setTimeout(() => { location.href = next; }, 350);
+    } catch (ex){
+      err.textContent = ex.message;
+      label.textContent = orig;
+      btn.disabled = false;
+    }
   });
 });
 

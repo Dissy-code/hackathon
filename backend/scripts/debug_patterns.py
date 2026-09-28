@@ -36,7 +36,7 @@ def render(name: str, indices: list[int]) -> Path:
             k = im.width / raw.slide_w
             p = build_pattern(raw, raw.slides[idx - 1], tokens)
 
-            def box(b, color, width=2):
+            def box(b, color, width=2, d=d, k=k):
                 d.rectangle([b.x * k, b.y * k, b.right * k, b.bottom * k], outline=color, width=width)
 
             if p.title:

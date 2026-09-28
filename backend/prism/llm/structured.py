@@ -4,11 +4,19 @@ from __future__ import annotations
 
 import json
 
+import openai
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from pydantic import BaseModel, ValidationError
 
 from prism.llm.client import strip_think
+
+# (base_url, model), для которых сервер отверг response_format; дальше сразу идём без него
+_NO_RESPONSE_FORMAT: set[tuple[str, str]] = set()
+
+
+def _model_key(model: BaseChatModel) -> tuple[str, str]:
+    return (str(getattr(model, "openai_api_base", "")), str(getattr(model, "model_name", "")))
 
 
 class StructuredOutputError(RuntimeError):
@@ -36,9 +44,12 @@ async def ainvoke_structured[T: BaseModel](
 ) -> T:
     """Запрашивает ответ по схеме; при ошибке валидации дописывает её в диалог и пробует снова.
 
-    use_json_schema=True — схема уходит в response_format (constrained decoding на стороне сервера).
-    False — только JSON-режим и схема в тексте запроса, для провайдеров без поддержки json_schema.
+    use_json_schema=True — схема уходит в response_format (constrained decoding на стороне сервера);
+    если сервер его отвергает, модель запоминается и дальше используется схема в тексте запроса.
+    False — сразу схема в тексте запроса, без response_format.
     """
+    if use_json_schema and _model_key(model) in _NO_RESPONSE_FORMAT:
+        use_json_schema = False
     if use_json_schema:
         bound = model.bind(
             response_format={
@@ -47,7 +58,7 @@ async def ainvoke_structured[T: BaseModel](
             }
         )
     else:
-        bound = model.bind(response_format={"type": "json_object"})
+        bound = model   # без response_format: не все провайдеры его принимают, схема — в тексте запроса
         messages = [
             *messages,
             HumanMessage(
@@ -59,7 +70,14 @@ async def ainvoke_structured[T: BaseModel](
     history = list(messages)
     last_error, raw = "", ""
     for _ in range(retries + 1):
-        reply = await bound.ainvoke(history)
+        try:
+            reply = await bound.ainvoke(history)
+        except openai.BadRequestError as e:
+            if not use_json_schema or "response_format" not in str(e):
+                raise
+            # провайдер не поддерживает response_format — запоминаем и повторяем со схемой в промпте
+            _NO_RESPONSE_FORMAT.add(_model_key(model))
+            return await ainvoke_structured(model, messages, schema, retries=retries, use_json_schema=False)
         raw = reply.content if isinstance(reply.content, str) else json.dumps(reply.content, ensure_ascii=False)
         try:
             return schema.model_validate_json(_extract_json(raw))
