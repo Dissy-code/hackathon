@@ -21,6 +21,7 @@ from prism.planning.schemas import SlideKind
 from prism.skills.registry import SkillRegistry
 
 ASSET_LIBRARY_PICTURES = 25
+ASSET_LIBRARY_GROUPS = 20      # векторные иконки: десятки групп фигур на одном слайде
 _HEX = re.compile(r"#?\b[0-9A-F]{6}\b")
 _URL = re.compile(r"https?://|www\.|\.ru/|\.com/")
 _CODE = re.compile(r"[{};]\s*$|^\s*[a-z-]+\s*:\s*[^:]+;\s*$", re.MULTILINE)
@@ -55,6 +56,7 @@ class SlideClass(BaseModel):
 
 class TemplateClassification(BaseModel):
     slides: list[SlideClass]
+    skill: dict | None = None        # manifest_entry скилла, если размечала модель
 
 
 # ── эвристики ──────────────────────────────────────────────────────────────
@@ -66,7 +68,8 @@ def _all_text(slide: SlideRaw) -> str:
 
 def heuristic_usage(slide: SlideRaw) -> Usage:
     pictures = sum(1 for s in slide.shapes if s.kind == ShapeKind.picture)
-    if pictures >= ASSET_LIBRARY_PICTURES:
+    groups = sum(1 for s in slide.shapes if s.kind == ShapeKind.group)
+    if pictures >= ASSET_LIBRARY_PICTURES or groups >= ASSET_LIBRARY_GROUPS:
         return Usage.asset_library
     text = _all_text(slide)
     if _GUIDE_STRONG.search(text):
@@ -141,7 +144,7 @@ def _clip(text: str, n: int = 60) -> str:
     return text if len(text) <= n else text[: n - 1] + "…"
 
 
-def describe(slide: SlideRaw, p: Pattern, h: SlideClass) -> str:
+def describe(slide: SlideRaw, p: Pattern, h: SlideClass, slide_area: int) -> str:
     pictures = sum(1 for s in slide.shapes if s.kind == ShapeKind.picture)
     guess = h.usage.value + ("/" + h.kind.value if h.kind else "")
     bg = "dark" if p.dark else "light"
@@ -153,6 +156,12 @@ def describe(slide: SlideRaw, p: Pattern, h: SlideClass) -> str:
         lines.append(f"  group: {g.count} items {g.arrangement}{' (fixed)' if g.fixed_count else ''}; item: [{first}]")
     for s in p.slots[:6]:
         lines.append(f"  {s.kind.value}: {_clip(s.sample)!r}" if s.sample else f"  {s.kind.value}")
+    # крупные картинки: скриншоты, мокапы, графики-картинки, декоративные 3D-объекты
+    for s in sorted((s for s in slide.shapes if s.kind == ShapeKind.picture), key=lambda s: -s.bbox.area)[:3]:
+        share = s.bbox.area / slide_area
+        if share >= 0.08:
+            look = "opaque" if s.image and (s.image.opaque_ratio or 0) >= 0.9 else "cutout"
+            lines.append(f"  large picture: {share:.0%} of slide, {look}")
     if h.usage != Usage.pattern:
         lines.append(f"  text: {_clip(_all_text(slide), 160)!r}")
     return "\n".join(lines)
@@ -160,7 +169,7 @@ def describe(slide: SlideRaw, p: Pattern, h: SlideClass) -> str:
 
 async def classify_with_llm(
     slides: list[SlideRaw], patterns: dict[int, Pattern], llm: LLMFactory, skills: SkillRegistry,
-    *, batch: int = 30,
+    *, slide_area: int, batch: int = 30,
 ) -> TemplateClassification:
     base = heuristic_classification(slides, patterns)
     by_index = {c.index: c for c in base.slides}
@@ -170,7 +179,7 @@ async def classify_with_llm(
         chunk = slides[start:start + batch]
         msgs = skill.render(
             kinds=[k.value for k in SlideKind],
-            slides="\n".join(describe(s, patterns[s.index], by_index[s.index]) for s in chunk),
+            slides="\n".join(describe(s, patterns[s.index], by_index[s.index], slide_area) for s in chunk),
         )
         try:
             result = await ainvoke_structured(model, msgs, TemplateClassification, retries=1)
@@ -181,4 +190,4 @@ async def classify_with_llm(
                 if c.usage == Usage.pattern and c.kind is None:
                     c.kind = by_index[c.index].kind
                 by_index[c.index] = c.model_copy(update={"source": "llm"})
-    return TemplateClassification(slides=[by_index[s.index] for s in slides])
+    return TemplateClassification(slides=[by_index[s.index] for s in slides], skill=skill.manifest_entry())

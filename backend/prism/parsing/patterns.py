@@ -276,8 +276,6 @@ def find_groups(shapes: list[Shape], raw: TemplateRaw, slide: SlideRaw, tokens: 
     used: set[int] = set()
     for comp in components.values():
         items = [list(m) for m in zip(*comp)]
-        if all(kinds[s.id] == SlotKind.surface for s in items[0]):
-            continue  # одни подложки без контента — декоративный ритм, не группа
         groups_members.append(items)
         used.update(s.id for it in items for s in it)
 
@@ -294,6 +292,10 @@ def find_groups(shapes: list[Shape], raw: TemplateRaw, slide: SlideRaw, tokens: 
                     big[i].extend(small[k])
                 groups_members.remove(small)
                 break
+    # подложки, которые так и не присоединились к карточкам с контентом, — декоративный ритм
+    for items in [g for g in groups_members if all(kinds[s.id] == SlotKind.surface for it in g for s in it)]:
+        groups_members.remove(items)
+        used.difference_update(s.id for it in items for s in it)
     free = [s for s in shapes if s.id in kinds and s.id not in used]
     for items in groups_members:
         _extend_by_pitch(items, free, used, tol)

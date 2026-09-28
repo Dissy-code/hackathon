@@ -21,6 +21,7 @@ import {
   type ChangeEvent, type CSSProperties, type PointerEvent as ReactPointerEvent,
 } from 'react';
 import './configurator.css';
+import { TPL_ACCEPT, describeTemplate, uploadTemplate } from './api.ts';
 
 /* ── Константы композиции ── */
 const CW = 750;            // ширина композиции
@@ -47,7 +48,17 @@ type Look = typeof LOOKS[number];
 
 type View = 'edit' | 'gen' | 'show';
 type Kind = 'tpl' | 'img';
-type Attachment = { name: string; url?: string };
+/* Шаблон уходит на сервер сразу после выбора: state показывает, где он в
+   разборе, colors перекрашивают миниатюру в палитру самого шаблона. */
+type Attachment = {
+  key: string;
+  name: string;
+  url?: string;
+  id?: string;
+  state?: 'busy' | 'ok' | 'err';
+  note?: string;
+  colors?: Partial<Record<'background' | 'text' | 'accent', string>>;
+};
 
 const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
 
@@ -74,9 +85,14 @@ const MAP_X = mapUri(false);
 const MAP_Y = mapUri(true);
 
 /* ── Мелкие куски разметки ── */
-function TplMini({ look }: { look: Look }) {
+function TplMini({ look, colors }: { look: Look; colors?: Attachment['colors'] }) {
+  const style = colors && ({
+    '--tpl-bg': colors.background ? `#${colors.background}` : undefined,
+    '--tpl-ink': colors.text ? `#${colors.text}` : undefined,
+    '--tpl-acc': colors.accent ? `#${colors.accent}` : undefined,
+  } as CSSProperties);
   return (
-    <span className="tpl-mini">
+    <span className="tpl-mini" style={style}>
       <i className="t-bar" /><i className="t-box" />
       <i className="t-line" /><i className="t-line short" />
       {look === 'b' && <i className="t-line" />}
@@ -123,12 +139,16 @@ function Slots({ kind, list, onAdd, onDrop }: {
         }
         if (!item) return <div key={`empty-${i}`} className="slot" />;
         const at = list.indexOf(item);
+        const state = item.state === 'busy' ? ' is-busy' : item.state === 'err' ? ' is-err' : '';
         return (
-          <div key={`${item.name}-${at}`} className="slot">
+          <div key={item.key} className={`slot${state}`} title={item.note}>
             {kind === 'img' && item.url
               ? <img className="slot__img" src={item.url} alt="" />
-              : <TplMini look={LOOKS[at % LOOKS.length]} />}
-            <span className="slot__name">{item.name}</span>
+              : <TplMini look={LOOKS[at % LOOKS.length]} colors={item.colors} />}
+            <span className="slot__name">
+              {item.note && <b className="slot__meta">{item.note}</b>}
+              {item.name}
+            </span>
             <button
               type="button"
               className="slot__kill"
@@ -458,16 +478,28 @@ export default function Configurator() {
     };
   }, [accOpen]);
 
-  /* ══════════ Вложения ══════════ */
+  /* ══════════ Вложения ══════════
+     Картинки пока живут только в браузере; шаблоны сразу уходят на сервер,
+     и ячейка показывает, что парсер в них нашёл. */
+  const patch = (key: string, upd: Partial<Attachment>) =>
+    setTpl((list) => list.map((a) => (a.key === key ? { ...a, ...upd } : a)));
+
   const take = (kind: Kind) => (e: ChangeEvent<HTMLInputElement>) => {
     const files = [...(e.target.files ?? [])];
-    const set = kind === 'tpl' ? setTpl : setImg;
-    set((list) => [
-      ...list,
-      ...files.slice(0, MAX - list.length).map((f) =>
-        kind === 'img' ? { name: f.name, url: URL.createObjectURL(f) } : { name: f.name }),
-    ]);
     e.target.value = '';                               // чтобы тот же файл можно было выбрать снова
+    if (kind === 'img') {
+      setImg((list) => [...list, ...files.slice(0, MAX - list.length)
+        .map((f) => ({ key: crypto.randomUUID(), name: f.name, url: URL.createObjectURL(f) }))]);
+      return;
+    }
+    const added = files.slice(0, MAX - tpl.length)
+      .map((f) => ({ file: f, item: { key: crypto.randomUUID(), name: f.name, state: 'busy' as const, note: 'разбираем…' } }));
+    setTpl((list) => [...list, ...added.map((a) => a.item)]);
+    added.forEach(({ file, item }) => {
+      uploadTemplate(file)
+        .then((t) => patch(item.key, { state: 'ok', id: t.id, note: describeTemplate(t), colors: t.colors }))
+        .catch((err: Error) => patch(item.key, { state: 'err', note: err.message }));
+    });
   };
 
   const drop = (kind: Kind) => (at: number) => {
@@ -641,7 +673,7 @@ export default function Configurator() {
       </div>
 
       {/* выбор файлов — скрытые поля, их открывают ячейки «добавить» */}
-      <input ref={tplInputRef} type="file" accept=".pptx,.potx,.pdf,.key" multiple
+      <input ref={tplInputRef} type="file" accept={TPL_ACCEPT} multiple
              hidden onChange={take('tpl')} />
       <input ref={imgInputRef} type="file" accept="image/*" multiple
              hidden onChange={take('img')} />

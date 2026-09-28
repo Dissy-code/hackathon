@@ -506,13 +506,39 @@ body {
 .slot__kill::before { transform: rotate(45deg); }
 .slot__kill::after  { transform: rotate(-45deg); }
 
-/* миниатюра шаблона — та же графика, что у слайдов на главной */
-.tpl-mini { position: absolute; inset: 0; padding: 8px; background: var(--ink); }
-.tpl-mini i { display: block; border-radius: 3px; background: #cfcfcf; }
+/* миниатюра шаблона — та же графика, что у слайдов на главной.
+   После разбора на сервере перекрашивается в цвета самого шаблона:
+   --tpl-bg / --tpl-ink / --tpl-acc приходят из ответа /api/templates */
+.tpl-mini { position: absolute; inset: 0; padding: 8px; background: var(--tpl-bg, var(--ink));
+            transition: background .5s; }
+.tpl-mini i { display: block; border-radius: 3px; background: var(--tpl-ink, #cfcfcf); transition: background .5s; }
 .tpl-mini .t-bar  { height: 6px; }
-.tpl-mini .t-box  { margin-top: 6px; height: 30px; background: var(--orange); }
-.tpl-mini .t-line { margin-top: 5px; height: 4px; }
+.tpl-mini .t-box  { margin-top: 6px; height: 30px; background: var(--tpl-acc, var(--orange)); }
+.tpl-mini .t-line { margin-top: 5px; height: 4px; opacity: .55; }
 .tpl-mini .t-line.short { width: 60%; }
+
+/* статус разбора шаблона: строка над именем файла, внутри той же подложки —
+   так она читается и на светлых шаблонах */
+.slot__name:has(.slot__meta) {
+  padding-top: 12px;
+  background: linear-gradient(0deg, rgba(0,0,0,.82) 55%, rgba(0,0,0,0));
+}
+.slot__meta {
+  display: block;
+  margin-bottom: 2px;
+  font-size: 5.2px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: rgba(255,255,255,.78);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.slot.is-busy .slot__meta { color: var(--orange); }
+.slot.is-err  .slot__meta { color: #ff7a6b; white-space: normal; }
+.slot.is-busy .tpl-mini   { animation: slotBusy 1s ease-in-out infinite alternate; }
+.slot.is-err  .tpl-mini   { filter: grayscale(1) brightness(.45); }
+@keyframes slotBusy { from { opacity: .35; } to { opacity: .9; } }
 
 /* ── промт ── */
 .prompt {

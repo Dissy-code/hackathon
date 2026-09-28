@@ -239,6 +239,27 @@
      как в макете. */
   const MAX = 3;
   const tpl = [], img = [];
+  const TPL_ACCEPT = '.pptx,.potx,.pdf,.html,.htm';
+
+  /* Шаблон уходит на сервер сразу после выбора; ответ перекрашивает
+     миниатюру в палитру шаблона и подписывает, сколько образцов нашлось.
+     Та же логика, что в api.ts у React-версии. */
+  function plural(n, one, few, many) {
+    const m10 = n % 10, m100 = n % 100;
+    if (m10 === 1 && m100 !== 11) return one;
+    if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return few;
+    return many;
+  }
+  async function uploadTemplate(file) {
+    const body = new FormData();
+    body.append('file', file);
+    let r;
+    try { r = await fetch('/api/templates', { method: 'POST', body }); }
+    catch { throw new Error('сервер недоступен'); }
+    const data = await r.json().catch(() => null);
+    if (!r.ok) throw new Error((data && data.detail) || `сервер ответил ${r.status}`);
+    return data;
+  }
 
   function pick(accept, multiple, done) {
     const inp = Object.assign(document.createElement('input'),
@@ -275,14 +296,28 @@
         return;
       }
       const el = document.createElement('div');
-      el.className = 'slot';
+      el.className = 'slot' + (item && item.state === 'busy' ? ' is-busy' : item && item.state === 'err' ? ' is-err' : '');
       if (item) {                                        // вложение
         el.innerHTML = (kind === 'img' && item.url)
           ? `<img class="slot__img" src="${item.url}" alt="">`
           : tplMini(list.indexOf(item));
+        const mini = el.querySelector('.tpl-mini');
+        if (mini && item.colors) {
+          const c = item.colors;
+          if (c.background) mini.style.setProperty('--tpl-bg', '#' + c.background);
+          if (c.text) mini.style.setProperty('--tpl-ink', '#' + c.text);
+          if (c.accent) mini.style.setProperty('--tpl-acc', '#' + c.accent);
+        }
         const name = document.createElement('span');
         name.className = 'slot__name';
-        name.textContent = item.name;                    // имя файла — только текстом
+        if (item.note) {
+          const meta = document.createElement('b');
+          meta.className = 'slot__meta';
+          meta.textContent = item.note;
+          name.appendChild(meta);
+          el.title = item.note;
+        }
+        name.append(item.name);                          // имя файла — только текстом
         const kill = document.createElement('button');
         kill.className = 'slot__kill';
         kill.type = 'button';
@@ -300,12 +335,19 @@
 
   function add(kind) {
     const list = kind === 'tpl' ? tpl : img;
-    const accept = kind === 'tpl' ? '.pptx,.potx,.pdf,.key' : 'image/*';
+    const accept = kind === 'tpl' ? TPL_ACCEPT : 'image/*';
     pick(accept, true, (files) => {
       files.slice(0, MAX - list.length).forEach((f) => {
-        list.push(kind === 'img'
-          ? { name: f.name, url: URL.createObjectURL(f) }
-          : { name: f.name });
+        if (kind === 'img') { list.push({ name: f.name, url: URL.createObjectURL(f) }); return; }
+        const item = { name: f.name, state: 'busy', note: 'разбираем…' };
+        list.push(item);
+        uploadTemplate(f)
+          .then((t) => Object.assign(item, {
+            state: 'ok', id: t.id, colors: t.colors,
+            note: `${t.patterns} ${plural(t.patterns, 'образец', 'образца', 'образцов')}${t.fonts[0] ? ' · ' + t.fonts[0] : ''}`,
+          }))
+          .catch((err) => Object.assign(item, { state: 'err', note: err.message }))
+          .finally(() => fill(tplSlots, tpl, 'tpl'));
       });
       fill(kind === 'tpl' ? tplSlots : imgSlots, list, kind);
     });

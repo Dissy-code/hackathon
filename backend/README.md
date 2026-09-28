@@ -36,7 +36,10 @@ scripts/install_fonts.sh    # шрифты шаблонов (Play, Montserrat, C
 ```bash
 uvicorn app.main:app --reload          # GET /health
 python scripts/smoke_llm.py            # проверка возможностей провайдера, отчёт в data/smoke/
-python -m prism.parsing.extract data/templates/x.pptx   # извлечение шаблона в JSON
+python -m prism.parsing.extract data/templates/x.pptx   # извлечение шаблона в JSON (сырые факты)
+python -m prism.parsing.spec data/templates/x.pptx      # полный разбор: токены, паттерны, ассеты
+python -m prism.parsing.spec data/templates/x.pptx --llm   # + классификация слайдов моделью
+python scripts/debug_patterns.py vk_tech 14 21         # рамки слотов и групп поверх рендера
 pytest                                 # юнит-тесты (без сети)
 pytest -m live                         # тесты с реальной моделью
 ```

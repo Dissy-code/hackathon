@@ -78,6 +78,15 @@ class DesignTokens(BaseModel):
         ranked = sorted((c for c in self.palette if role in c.roles), key=lambda c: -c.roles[role])
         return ranked[0].hex if ranked else None
 
+    def accent(self) -> str | None:
+        """Акцент, отличимый от основного текста (иначе выделение сольётся с текстом)."""
+        text = self.color("text")
+        ranked = sorted((c for c in self.palette if "accent" in c.roles), key=lambda c: -c.roles["accent"])
+        for c in ranked:
+            if text is None or delta_e(c.hex, text) > 15:
+                return c.hex
+        return ranked[0].hex if ranked else None
+
 
 # ── палитра ────────────────────────────────────────────────────────────────
 
@@ -191,23 +200,34 @@ def _is_title(s: Shape) -> bool:
     return bool(s.placeholder and s.placeholder.type in ("title", "center_title", "ctrtitle"))
 
 
-def _type_observations(slides: list[SlideRaw]):
+def _slide_title(slide: SlideRaw, slide_h: int) -> Shape | None:
+    """Плейсхолдер заголовка, а без него — самый крупный текст в верхней четверти слайда."""
+    ph = next((s for s in slide.shapes if _is_title(s)), None)
+    if ph is not None:
+        return ph
+    top = [s for s in slide.shapes if s.kind == ShapeKind.text and s.paragraphs and s.text.strip()
+           and s.bbox.y < slide_h * 0.25]
+    return max(top, key=lambda s: s.paragraphs[0].style.size_pt or 0, default=None)
+
+
+def _type_observations(slides: list[SlideRaw], slide_h: int):
     """(кегль с учётом autofit, вес, это заголовок, шрифт) — нормировано по слайду."""
     out = []
     for slide in slides:
         rows = []
+        title = _slide_title(slide, slide_h)
         for s in slide.shapes:
             for p in s.paragraphs:
                 if p.style.size_pt and p.text.strip():
                     size = round(p.style.size_pt * s.autofit_scale, 2)
-                    rows.append((size, len(p.text.strip()), _is_title(s), p.style.font))
+                    rows.append((size, len(p.text.strip()), s is title, p.style.font))
         total = sum(r[1] for r in rows) or 1
         out += [(size, w / total, title, font) for size, w, title, font in rows]
     return out
 
 
-def _type_scale(slides: list[SlideRaw]) -> list[TypeStep]:
-    obs = _type_observations(slides)
+def _type_scale(slides: list[SlideRaw], slide_h: int) -> list[TypeStep]:
+    obs = _type_observations(slides, slide_h)
     if not obs:
         return []
     by_size: dict[float, list] = defaultdict(list)
@@ -254,12 +274,12 @@ def _type_scale(slides: list[SlideRaw]) -> list[TypeStep]:
     return result
 
 
-def _fonts(slides: list[SlideRaw], scale: list[TypeStep]) -> FontTokens:
+def _fonts(slides: list[SlideRaw], scale: list[TypeStep], slide_h: int) -> FontTokens:
     usage: dict[str, float] = defaultdict(float)
     heading: dict[str, float] = defaultdict(float)
     body: dict[str, float] = defaultdict(float)
     body_size = next((s.size_pt for s in scale if s.role == "body"), None)
-    for size, w, title, font in _type_observations(slides):
+    for size, w, title, font in _type_observations(slides, slide_h):
         if not font:
             continue
         usage[font] += w
@@ -337,7 +357,7 @@ def build_tokens(raw: TemplateRaw, slide_indices: list[int] | None = None) -> De
     gx = _dedupe([g.pos for g in raw.guides if g.orient == "v"], tol)
     gy = _dedupe([g.pos for g in raw.guides if g.orient == "h"], tol)
 
-    scale = _type_scale(slides)
+    scale = _type_scale(slides, raw.slide_h)
     bgs: dict[tuple[str, str | None], list[int]] = defaultdict(list)
     for s in slides:
         bgs[(s.background.kind, s.background.color)].append(s.index)
@@ -346,7 +366,7 @@ def build_tokens(raw: TemplateRaw, slide_indices: list[int] | None = None) -> De
         slide_w=raw.slide_w, slide_h=raw.slide_h,
         palette=_palette(raw, slides),
         text_pairs=_text_pairs(slides),
-        fonts=_fonts(slides, scale),
+        fonts=_fonts(slides, scale, raw.slide_h),
         type_scale=scale,
         margins=_margins(raw, slides, gx, gy),
         guides_x=gx, guides_y=gy,

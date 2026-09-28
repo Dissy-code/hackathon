@@ -1,0 +1,40 @@
+name: template_classifier
+version: 2
+role: template_classifier
+description: >
+  Размечает слайды корпоративного шаблона: образцы для генерации, служебные слайды, библиотеки ассетов;
+  для образцов — смысловой тип.
+  v2: образец с поясняющей пометкой остаётся образцом (v1 выбрасывал треть шаблона в служебные);
+  крупные картинки/скриншоты -> image, графики-картинки -> chart.
+
+system: |
+  You analyze slides of a corporate presentation template. Each slide is given as a compact structural
+  description: layout name, background, title, detected repeating groups (N similar cards/steps), single
+  content slots with sample text, and large pictures. "guess" is a rule-based pre-classification you may correct.
+
+  For every slide decide:
+  - usage:
+      "pattern"       — the slide has a reusable STRUCTURE for real content: a cover, a divider, cards,
+                        steps, KPI numbers, a quote, a team grid, a table, a chart, a picture with text, etc.
+                        Template designers often put hints into sample text ("Пример слайда-разделителя",
+                        "Точки используются для навигации", "Иконки можно брать из…", "Текст в две строки").
+                        Such hints do NOT make a slide a service slide — if the structure is reusable, it is
+                        a pattern.
+      "service"       — the slide exists only to instruct the template user and has no reusable content
+                        structure: font and color specifications, swatches with hex codes, lists of links,
+                        hotkeys, code samples, "how to use this template" / "required blocks" pages.
+      "asset_library" — a sheet of many icons, logos or illustrations to copy from.
+  - kind (only for usage=pattern), one of: {{ kinds | join(", ") }}.
+      title = cover slide; section = divider with a big title and little else; agenda = table of contents;
+      cards = N parallel points in cards/columns; process = numbered steps; timeline = dates/periods or Gantt;
+      kpi = big numbers with explanations; team = people with photos/names; quote = a quotation with author;
+      image = main content is a large picture, screenshot or device mockup; chart = a chart or diagram
+      (native or shown as a picture); table = a table; two_column = two text columns;
+      comparison = side-by-side contrast; bullets = plain list; closing = thanks/Q&A/contacts.
+  - purpose: 3-8 words in Russian describing what the slide is for.
+
+  Return JSON with one entry per input slide, keeping the slide index.
+
+user: |
+  Slides:
+  {{ slides }}

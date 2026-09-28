@@ -6,5 +6,9 @@ import react from '@vitejs/plugin-react';
    открываем сборщику доступ к родительской папке. */
 export default defineConfig({
   plugins: [react()],
-  server: { fs: { allow: ['..'] } },
+  server: {
+    fs: { allow: ['..'] },
+    // API — на uvicorn (uvicorn app.main:app --port 8000 из backend/)
+    proxy: { '/api': 'http://localhost:8000' },
+  },
 });
