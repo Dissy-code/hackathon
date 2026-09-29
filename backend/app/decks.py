@@ -26,6 +26,7 @@ from app.auth import Db, OptionalUser
 from app.templates import UPLOADS, load_spec
 from prism.config import BACKEND_DIR
 from prism.generation.pipeline import detect_language, run
+from prism.llm.fake import FakeLLMFactory
 from prism.parsing.spec import SPECS_DIR
 
 router = APIRouter(prefix="/api", tags=["decks"])
@@ -116,13 +117,16 @@ def _public_result(deck_id: str, final: dict) -> dict:
         return f"/api/decks/{deck_id}/files/{Path(path).relative_to(base).as_posix()}" if path else None
 
     return {
-        "outline": [s["title"] for s in final.get("outline", {}).get("slides", [])],
+        "outline": {k: [s["title"] for s in o.get("slides", [])] for k, o in final.get("outlines", {}).items()},
         "decks": [{
             "template_id": d["template_id"], "name": d["name"],
-            "pptx": url(d["pptx"]), "pdf": url(d.get("pdf")),
-            "slides": [url(p) for p in d.get("previews", [])],
-            "warnings": [{"slide": r["index"], "text": w} for r in d["reports"] for w in r["warnings"]],
-            "render_error": d.get("render_error"),
+            "variants": [{
+                "variant": v["variant"], "label": v["label"],
+                "pptx": url(v["pptx"]), "pdf": url(v.get("pdf")),
+                "slides": [url(p) for p in v.get("previews", [])],
+                "warnings": [{"slide": r["index"], "text": w} for r in v["reports"] for w in r["warnings"]],
+                "render_error": v.get("render_error"),
+            } for v in d["variants"]],
         } for d in final.get("decks", [])],
         "warnings": final.get("warnings", []),
         "manifest": final.get("manifest", {}),
@@ -170,7 +174,10 @@ async def create_deck(body: DeckRequest, request: Request, db: Db, user: Optiona
         db.execute("INSERT INTO user_decks (user_id, deck_id, title) VALUES (?, ?, ?)",
                    (user.id, deck_id, body.prompt[:120]))
     app = request.app
-    job.task = asyncio.create_task(_run_job(job, state, app.state.llm, app.state.skills))
+    llm = app.state.llm
+    if getattr(llm, "fake", False):                 # демо-режим: заготовка по теме из промпта
+        llm = FakeLLMFactory(body.prompt)
+    job.task = asyncio.create_task(_run_job(job, state, llm, app.state.skills))
     return DeckCreated(id=deck_id)
 
 

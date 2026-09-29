@@ -21,7 +21,10 @@ import {
   type ChangeEvent, type CSSProperties, type PointerEvent as ReactPointerEvent,
 } from 'react';
 import './configurator.css';
-import { TPL_ACCEPT, describeTemplate, fetchMe, logout, plural, uploadTemplate, type Me } from './api.ts';
+import {
+  TPL_ACCEPT, createDeck, describeTemplate, fetchMe, followDeck, logout, plural, uploadImage, uploadTemplate,
+  type DeckResult, type Me,
+} from './api.ts';
 
 /* ── Константы композиции ── */
 const CW = 750;            // ширина композиции
@@ -30,7 +33,6 @@ const GRID_CELL = 24;      // шаг сетки в px композиции
 const MAX = 3;             // максимум вложений каждого вида
 const NAV_X = [4.6, 182.8] as const;   // левые края режимов в px композиции
 const LENS_HALF = 89.4;                // половина ширины линзы
-const GEN_MS = 7200;                   // сколько идёт «генерация»
 
 /* Качество: если кадры начинают опаздывать, опускаемся на уровень ниже. */
 const QUAL = [
@@ -39,9 +41,6 @@ const QUAL = [
   { glow: 0.4, blur: 9, bg: 70 },
   { glow: 0.35, blur: 6, bg: 90 },
 ] as const;
-
-const WORDS = ['читаем задачу', 'подбираем макеты', 'пишем текст',
-  'раскладываем слайды', 'наводим красоту'] as const;
 
 const LOOKS = ['a', 'b', 'c'] as const;
 type Look = typeof LOOKS[number];
@@ -183,7 +182,14 @@ export default function Configurator() {
   const [img, setImg] = useState<Attachment[]>([]);
   const [slide, setSlide] = useState(0);
   const [me, setMe] = useState<Me | null>(null);
-  const deckReady = useRef(false);
+  const [prompt, setPrompt] = useState('');
+  const [hint, setHint] = useState<string | null>(null);        // почему генерация не стартовала
+  const [deck, setDeck] = useState<DeckResult | null>(null);   // готовые колоды — по одной на шаблон
+  const [deckAt, setDeckAt] = useState(0);                      // какой шаблон смотрим
+  const [variantAt, setVariantAt] = useState(0);                // какой вариант колоды
+  const [genError, setGenError] = useState<string | null>(null);
+  // куда тянется анимация генерации: прогресс и фраза приходят событиями с сервера
+  const genTarget = useRef({ progress: 0, message: '' });
 
   /* Размер сцены нужен и обработчикам, и кадровому циклу — держим в ref. */
   const geom = useRef({ S: 1, W: 0, H: 0 });
@@ -369,61 +375,75 @@ export default function Configurator() {
   }, []);
 
   /* ══════════ Генерация ══════════
-     Прогресс закрашивает надпись ЦДС по диагонали, слова печатаются по букве
-     и сменяют друг друга. Обе величины пишем прямо в узлы: гонять их через
-     setState по шестьдесят раз в секунду незачем. */
+     Прогресс закрашивает надпись ЦДС по диагонали, фраза печатается по букве.
+     Цель (доля и фраза) приходит событиями с сервера, анимация плавно к ней
+     тянется. Пишем прямо в узлы: гонять это через setState каждый кадр незачем. */
   useEffect(() => {
     if (view !== 'gen') return;
     const logo = genLogoRef.current, word = genWordRef.current, caret = genCaretRef.current;
     if (!logo || !word || !caret) return;
 
-    const t0 = performance.now();
-    let raf = 0, at = -1, wordT0 = 0, done = false;
-
+    let raf = 0, fill = 0, shownMsg = '', msgT0 = performance.now();
     const step = (now: number) => {
-      const t = clamp((now - t0) / GEN_MS, 0, 1);
-      // лёгкая неравномерность — как у настоящей очереди задач
-      const eased = t < 1 ? clamp(t + Math.sin(t * 7.3) * 0.035, 0, 1) : 1;
-      logo.style.setProperty('--fill', `${(eased * 100).toFixed(1)}%`);
-
-      const next = Math.min(WORDS.length - 1, Math.floor(t * WORDS.length));
-      if (next !== at) { at = next; wordT0 = now; }
-      const text = WORDS[at];
-      const cut = Math.min(text.length, Math.floor((now - wordT0) / 34));
-      const shown = text.slice(0, cut);
-      if (word.textContent !== shown) word.textContent = shown;
-      caret.style.opacity = cut < text.length ? '1' : '0';
-
-      if (t < 1) { raf = requestAnimationFrame(step); return; }
-      done = true;
-      word.textContent = 'готово';
-      caret.style.opacity = '0';
-      deckReady.current = true;
-      raf = window.setTimeout(() => setView('show'), 620) as unknown as number;
+      const { progress, message } = genTarget.current;
+      fill += (progress - fill) * 0.06;                // догоняем цель без рывков
+      logo.style.setProperty('--fill', `${(fill * 100).toFixed(1)}%`);
+      if (message !== shownMsg) { shownMsg = message; msgT0 = now; }
+      const cut = Math.min(message.length, Math.floor((now - msgT0) / 34));
+      const text = message.slice(0, cut);
+      if (word.textContent !== text) word.textContent = text;
+      caret.style.opacity = cut < message.length ? '1' : '0';
+      raf = requestAnimationFrame(step);
     };
-
     logo.style.setProperty('--fill', '0%');
     word.textContent = '';
-    caret.style.opacity = '1';
     raf = requestAnimationFrame(step);
-
-    return () => { if (done) clearTimeout(raf); else cancelAnimationFrame(raf); };
+    return () => cancelAnimationFrame(raf);
   }, [view]);
 
   /* ══════════ Режимы ══════════ */
-  const startGen = useCallback(() => {
+  const startGen = useCallback(async () => {
+    const ready = tpl.filter((t) => t.state === 'ok' && t.id);
+    if (!ready.length) {
+      setHint(tpl.some((t) => t.state === 'busy') ? 'шаблон ещё разбирается…' : 'добавьте хотя бы один шаблон');
+      setNavAt(0); setView('edit');
+      return;
+    }
+    if (prompt.trim().length < 3) {
+      setHint('опишите задачу — хотя бы тему');
+      setNavAt(0); setView('edit');
+      return;
+    }
+    if (img.some((i) => i.state === 'busy')) { setHint('картинки ещё загружаются…'); return; }
+    setHint(null);
+    setGenError(null);
     setAccOpen(false);
-    deckReady.current = false;
     setNavAt(1);
+    genTarget.current = { progress: 0.01, message: 'отправляем задачу' };
     setView('gen');
-  }, []);
+    try {
+      const id = await createDeck(prompt.trim(), ready.map((t) => t.id!),
+        img.filter((i) => i.state === 'ok' && i.id).map((i) => i.id!));
+      const result = await followDeck(id, (e) => {
+        genTarget.current = { progress: e.progress, message: e.message ?? genTarget.current.message };
+      });
+      genTarget.current = { progress: 1, message: 'готово' };
+      setDeck(result);
+      setDeckAt(0);
+      setVariantAt(0);
+      setSlide(0);
+      if (me) fetchMe().then(setMe);                   // счётчик презентаций в меню аккаунта
+      setTimeout(() => setView('show'), 620);
+    } catch (err) {
+      setGenError((err as Error).message);
+    }
+  }, [tpl, img, prompt, me]);
 
   const go = useCallback((target: View) => {
     if (target === 'edit') { setNavAt(0); setView('edit'); return; }
-    setNavAt(1);
-    if (deckReady.current) setView('show');
-    else startGen();
-  }, [startGen]);
+    if (deck) { setNavAt(1); setView('show'); return; }
+    startGen();
+  }, [startGen, deck]);
 
   /* Линзу можно не только нажать, но и протащить: пока держат — она идёт за
      рукой, на отпускании притягивается к ближайшему режиму. */
@@ -489,17 +509,26 @@ export default function Configurator() {
   }, [accOpen]);
 
   /* ══════════ Вложения ══════════
-     Картинки пока живут только в браузере; шаблоны сразу уходят на сервер,
-     и ячейка показывает, что парсер в них нашёл. */
-  const patch = (key: string, upd: Partial<Attachment>) =>
-    setTpl((list) => list.map((a) => (a.key === key ? { ...a, ...upd } : a)));
+     Всё уходит на сервер сразу после выбора: шаблон — в разбор (ячейка покажет,
+     что парсер в нём нашёл), картинка — в хранилище, чтобы генерация могла её взять. */
+  const patch = (key: string, upd: Partial<Attachment>, kind: Kind = 'tpl') =>
+    (kind === 'tpl' ? setTpl : setImg)((list) => list.map((a) => (a.key === key ? { ...a, ...upd } : a)));
 
   const take = (kind: Kind) => (e: ChangeEvent<HTMLInputElement>) => {
     const files = [...(e.target.files ?? [])];
     e.target.value = '';                               // чтобы тот же файл можно было выбрать снова
+    setHint(null);
     if (kind === 'img') {
-      setImg((list) => [...list, ...files.slice(0, MAX - list.length)
-        .map((f) => ({ key: crypto.randomUUID(), name: f.name, url: URL.createObjectURL(f) }))]);
+      const addedImg = files.slice(0, MAX - img.length).map((f) => ({
+        file: f,
+        item: { key: crypto.randomUUID(), name: f.name, url: URL.createObjectURL(f), state: 'busy' as const },
+      }));
+      setImg((list) => [...list, ...addedImg.map((a) => a.item)]);
+      addedImg.forEach(({ file, item }) => {
+        uploadImage(file)
+          .then((u) => patch(item.key, { state: 'ok', id: u.id }, 'img'))
+          .catch((err: Error) => patch(item.key, { state: 'err', note: err.message }, 'img'));
+      });
       return;
     }
     const added = files.slice(0, MAX - tpl.length)
@@ -532,6 +561,21 @@ export default function Configurator() {
   useEffect(() => () => {
     imgLive.current.forEach((i) => { if (i.url) URL.revokeObjectURL(i.url); });
   }, []);
+
+  const byTemplate = deck ? deck.decks[deckAt] : null;
+  const current = byTemplate ? byTemplate.variants[Math.min(variantAt, byTemplate.variants.length - 1)] : null;
+
+  /* стрелки листают слайды в демонстрации */
+  useEffect(() => {
+    if (view !== 'show' || !current) return;
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.target as Element)?.closest?.('textarea, input')) return;
+      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') setSlide((i) => Math.min(i + 1, current.slides.length - 1));
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') setSlide((i) => Math.max(i - 1, 0));
+    };
+    addEventListener('keydown', onKey);
+    return () => removeEventListener('keydown', onKey);
+  }, [view, current]);
 
   const lensStyle: CSSProperties = {
     transform: `translateX(${(NAV_X[navAt] - NAV_X[0]).toFixed(1)}px) scaleX(1)`,
@@ -643,9 +687,12 @@ export default function Configurator() {
                   <textarea
                     className="prompt"
                     spellCheck={false}
-                    placeholder="Опиши задачу: тема и аудитория, тон, сколько слайдов, что обязательно должно быть внутри. Чем конкретнее — тем ближе результат."
+                    value={prompt}
+                    onChange={(e) => { setPrompt(e.target.value); setHint(null); }}
+                    placeholder="Опиши задачу: тема и аудитория, тон, сколько слайдов, что обязательно должно быть внутри. Чем конкретнее — тем ближе результат. Коротко — найдём факты сами."
                     onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') startGen(); }}
                   />
+                  {hint && <p className="go-hint" role="status">{hint}</p>}
                   <button className="btn go" type="button" onClick={startGen}>Сгенерировать</button>
                 </div>
               </div>
@@ -653,19 +700,82 @@ export default function Configurator() {
               {/* ── Состояние 2: генерация ── */}
               <div className={`view view--gen${view === 'gen' ? ' is-on' : ''}`}>
                 <div className="pane pane--gen">
+<<<<<<< HEAD
                   <div className="gen">
                     <div className="gen__logo" ref={genLogoRef} role="img" aria-label="ЦДС" />
+=======
+                  <div className={genError ? 'gen is-err' : 'gen'}>
+                    <div className="gen__logo" ref={genLogoRef}>ЦДС</div>
+>>>>>>> a2270c6 (backnd v0.4)
                     <div className="gen__word">
                       <span ref={genWordRef} />
                       <i className="gen__caret" ref={genCaretRef} />
                       <i className="gen__dots"><b /><b /><b /></i>
                     </div>
+                    {genError && (
+                      <div className="gen__err" role="alert">
+                        <p>{genError}</p>
+                        <button className="btn" type="button" onClick={() => go('edit')}>К редактору</button>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
 
               {/* ── Состояние 3: демонстрация ── */}
               <div className={`view view--show${view === 'show' ? ' is-on' : ''}`}>
+                {current ? (
+                  <>
+                    <div className="rail rail--real" aria-label="Слайды">
+                      {current.slides.map((src, i) => (
+                        <button
+                          key={src}
+                          type="button"
+                          className={i === slide ? 'thumb thumb--real is-on' : 'thumb thumb--real'}
+                          aria-label={`Слайд ${i + 1}`}
+                          onClick={() => setSlide(i)}
+                        >
+                          <img src={src} alt="" loading="lazy" />
+                          <span className="thumb__n">{i + 1}</span>
+                        </button>
+                      ))}
+                    </div>
+                    <div className="canvas canvas--real">
+                      {current.slides[slide]
+                        ? <img className="canvas__img" src={current.slides[slide]} alt={`Слайд ${slide + 1}`} />
+                        : <p className="canvas__msg">{current.render_error ?? 'превью не готово'}</p>}
+                      <div className="show-bar">
+                        {deck!.decks.length > 1 && (
+                          <div className="show-bar__tabs" role="tablist" aria-label="Шаблон">
+                            {deck!.decks.map((d, i) => (
+                              <button key={d.template_id} type="button" role="tab" aria-selected={i === deckAt}
+                                      className={i === deckAt ? 'chip is-on' : 'chip'}
+                                      onClick={() => { setDeckAt(i); setSlide(0); }} title={d.name}>
+                                {d.name.replace(/\.(pptx|potx|pdf|html?)$/i, '')}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                        <div className="show-bar__tabs" role="tablist" aria-label="Вариант">
+                          {byTemplate!.variants.map((v, i) => (
+                            <button key={v.variant} type="button" role="tab" aria-selected={i === variantAt}
+                                    className={i === variantAt ? 'chip chip--variant is-on' : 'chip chip--variant'}
+                                    onClick={() => { setVariantAt(i); setSlide(0); }}
+                                    title={v.warnings.length ? `замечаний вёрстки: ${v.warnings.length}` : undefined}>
+                              {v.label}
+                            </button>
+                          ))}
+                        </div>
+                        <span className="show-bar__count">{slide + 1} / {current.slides.length}</span>
+                        <div className="show-bar__export">
+                          {current.pptx && <a className="chip chip--go" href={current.pptx} download>PPTX</a>}
+                          {current.pdf && <a className="chip chip--go" href={current.pdf} download>PDF</a>}
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <>
                 <div className="rail">
                   {LOOKS.map((look, i) => (
                     <button
@@ -683,6 +793,8 @@ export default function Configurator() {
                 <div className="canvas" style={{ '--k': 1 } as CSSProperties}>
                   <DeckSlide look={LOOKS[slide]} />
                 </div>
+                  </>
+                )}
               </div>
 
             </div>

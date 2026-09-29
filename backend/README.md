@@ -34,7 +34,11 @@ scripts/install_fonts.sh    # шрифты шаблонов (Play, Montserrat, C
 ## Запуск
 
 ```bash
+(cd ../frontend && npm install && npm run build)   # React-конфигуратор -> frontend/app
 uvicorn app.main:app --reload          # http://localhost:8000/configurator.html, API — /api/*
+LLM_FAKE=1 uvicorn app.main:app        # демо-режим без провайдера: текст подставной, вёрстка настоящая
+python scripts/generate.py -t data/templates/x.pptx -p "бриф…" [--slides 10]   # генерация из консоли
+python scripts/demo_compose.py vk_tech   # вёрстка тестовой колоды без модели -> data/debug/
 python scripts/smoke_llm.py            # проверка возможностей провайдера, отчёт в data/smoke/
 python -m prism.parsing.extract data/templates/x.pptx   # извлечение шаблона в JSON (сырые факты)
 python -m prism.parsing.spec data/templates/x.pptx      # полный разбор: токены, паттерны, ассеты

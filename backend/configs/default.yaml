@@ -10,7 +10,7 @@ llm:
   #   openrouter — OpenRouter и совместимые (alltokens.ru): reasoning.enabled, без top_k
   #   plain      — только стандартные параметры OpenAI
   api_style: ${LLM_API_STYLE:-vllm}
-  timeout_s: 180
+  timeout_s: 90            # на один запрос; общий лимит — 5 минут на все колоды
   max_retries: 4           # в т.ч. на 429 «перегружено» — у бесплатных моделей это обычное дело
   models:
     text: ${LLM_MODEL}
@@ -26,8 +26,10 @@ role_defaults:
 
 # Узлы графа ссылаются только на роли; какая модель за ролью — решает профиль.
 roles:
-  outline_planner: { model: text,   think: true, max_tokens: 12000 }
-  slide_writer:    { model: text,   temperature: 0.5, max_tokens: 8000 }
+  # без размышлений: с ними план шёл >60 с и упирался в таймаут шлюза, а лимит — 5 минут на колоду
+  outline_planner: { model: text,   think: false, temperature: 0.4, max_tokens: 4000 }
+  # пачке из 4 слайдов хватает ~1500 токенов; лимит с запасом, но обрывает зацикливание быстро
+  slide_writer:    { model: text,   temperature: 0.5, max_tokens: 3500 }
   shorten:         { model: text,   temperature: 0.3, max_tokens: 1024 }
   fix_agent:       { model: text,   temperature: 0.3 }
   research:        { model: text,   temperature: 0.3 }

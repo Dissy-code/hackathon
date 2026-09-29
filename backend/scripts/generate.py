@@ -45,8 +45,11 @@ async def main(args: argparse.Namespace) -> None:
                                          encoding="utf-8")
     print(f"\nколода {deck_id} за {final['manifest']['seconds']} с -> {out_dir}")
     for d in final["decks"]:
-        warns = [w for r in d["reports"] for w in r["warnings"]]
-        print(f"  {d['name']}: {d['pptx']} ({len(d.get('previews', []))} превью, предупреждений: {len(warns)})")
+        print(f"  {d['name']}:")
+        for v in d["variants"]:
+            warns = [w for r in v["reports"] for w in r["warnings"]]
+            print(f"    v{v['variant']} {v['label']:<17} {v['pptx']} "
+                  f"({len(v.get('previews', []))} превью, предупреждений: {len(warns)})")
     for w in final.get("warnings", []):
         print("  ⚠", w)
 

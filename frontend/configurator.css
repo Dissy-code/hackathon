@@ -725,3 +725,129 @@ html.has-cur * { cursor: none !important; }
   }
   .gen__dots b, .gen__caret { animation: none; }
 }
+
+/* ══════════ Генерация по-настоящему ══════════
+   Подсказка у кнопки, ошибка генерации, реальные слайды в демонстрации,
+   переключатель шаблонов и экспорт — тем же стеклом и оранжевым. */
+
+/* почему генерация не стартовала — рядом с кнопкой */
+.go-hint {
+  position: absolute;
+  right: 150px;
+  bottom: 18px;
+  margin: 0;
+  font-size: 7.5px;
+  font-weight: 600;
+  color: var(--orange);
+  animation: hintIn .35s cubic-bezier(.22, 1.1, .34, 1) both;
+}
+@keyframes hintIn { from { opacity: 0; transform: translateX(6px); } to { opacity: 1; transform: none; } }
+
+/* ошибка генерации: надпись не закрашивается, точки замирают */
+.gen.is-err .gen__dots,
+.gen.is-err .gen__caret { display: none; }
+.gen.is-err .gen__logo { filter: grayscale(1) brightness(.6); }
+.gen__err {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  max-width: 420px;
+  text-align: center;
+}
+.gen__err p { margin: 0; font-size: 7.5px; line-height: 1.4; color: #ff7a6b; }
+.gen__err .btn { height: 20px; padding: 0 14px; font-size: 8px; }
+
+.slot.is-busy .slot__img { opacity: .45; animation: slotBusy 1s ease-in-out infinite alternate; }
+.slot.is-err  .slot__img { filter: grayscale(1) brightness(.45); }
+
+/* лента настоящих слайдов: 16:9, прокручивается, если слайдов больше трёх */
+.rail--real {
+  height: 249.3px;
+  overflow-y: auto;
+  scrollbar-width: none;
+  scroll-snap-type: y proximity;
+  padding: 2px 3px 2px 2px;
+  margin-left: -2px;
+}
+.rail--real::-webkit-scrollbar { display: none; }
+.thumb--real {
+  height: 59.4px;
+  margin-bottom: 7px;
+  background: rgba(0,0,0,.35);
+  scroll-snap-align: start;
+}
+.thumb--real img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.thumb__n {
+  position: absolute;
+  left: 4px; bottom: 3px;
+  padding: 1px 4px;
+  border-radius: 999px;
+  font-size: 5.5px;
+  font-weight: 600;
+  color: #fff;
+  background: rgba(0,0,0,.55);
+}
+
+/* холст: слайд целиком, с сохранением пропорций */
+.canvas--real { background: rgba(0,0,0,.4); }
+.canvas__img {
+  position: absolute;
+  inset: 8px 8px 30px;
+  width: calc(100% - 16px);
+  height: calc(100% - 38px);
+  object-fit: contain;
+  animation: slideIn .3s ease-out both;
+}
+@keyframes slideIn { from { opacity: 0; transform: scale(.985); } to { opacity: 1; transform: none; } }
+.canvas__msg {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  font-size: 8px;
+  color: rgba(255,255,255,.55);
+}
+
+/* панель под слайдом: шаблоны слева, счётчик и экспорт справа */
+.show-bar {
+  position: absolute;
+  left: 8px; right: 8px; bottom: 6px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.show-bar__tabs { display: flex; gap: 4px; min-width: 0; overflow: hidden; }
+.show-bar__count { margin-left: auto; font-size: 6.5px; font-weight: 600; color: rgba(255,255,255,.55); }
+.show-bar__export { display: flex; gap: 4px; }
+.chip {
+  height: 16px;
+  max-width: 120px;
+  padding: 0 8px;
+  border-radius: 999px;
+  border: 0.5px solid rgba(255,255,255,.18);
+  background: rgba(255,255,255,.06);
+  color: rgba(255,255,255,.72);
+  font: inherit;
+  font-size: 6.5px;
+  font-weight: 600;
+  line-height: 16px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background .2s, color .2s, border-color .2s, transform .18s;
+}
+.chip:hover { background: rgba(255,255,255,.12); color: #fff; transform: translateY(-1px); }
+.chip.is-on { border-color: var(--orange); color: #fff; background: rgba(221,94,17,.22); }
+.chip--go { color: #000; background: var(--orange); border-color: transparent; }
+.chip--go:hover { background: #f06f1c; color: #000; }
+.chip:focus-visible { outline: 1.5px solid var(--orange); outline-offset: 2px; }
+
+/* вариант колоды — рядом с выбором шаблона, но отделён тонкой чертой */
+.show-bar__tabs + .show-bar__tabs { padding-left: 6px; border-left: 0.5px solid rgba(255,255,255,.18); }
+.chip--variant.is-on { background: rgba(221,94,17,.34); }

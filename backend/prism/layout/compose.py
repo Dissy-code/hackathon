@@ -55,6 +55,31 @@ class SlideReport:
 # ── выбор образца ──────────────────────────────────────────────────────────
 
 
+def _capacity(slot: Slot) -> float:
+    """Грубо: сколько символов влезет в слот его кеглем (фигура с автоподбором может подрасти вдвое)."""
+    size = (slot.styles[0].size_pt if slot.styles and slot.styles[0].size_pt else 14) or 14
+    w_pt, h_pt = slot.bbox.w / 12700, slot.bbox.h / 12700
+    if slot.autofit == "shape":
+        h_pt *= 2
+    return max((w_pt / (size * 0.55)) * (h_pt / (size * 1.2)), 1.0)
+
+
+def _overflow_penalty(p: Pattern, content: SlideContent) -> float:
+    """Штраф, если реальный текст пунктов заведомо не влезет в текстовые слоты карточек образца."""
+    g = _main_group(p)
+    texts = [i.text or "" for i in content.items if i.text]
+    if g is None or not texts:
+        return 0.0
+    slots = [sl for sl in g.items[0] if sl.kind in (SlotKind.text, SlotKind.caption)]
+    if not slots:
+        slots = [sl for sl in g.items[0] if sl.kind == SlotKind.heading]
+    if not slots:
+        return 0.0
+    capacity = max(_capacity(sl) for sl in slots)
+    ratio = (sum(len(t) for t in texts) / len(texts)) / capacity
+    return min(4.0, max(0.0, ratio - 1.1) * 2.5)
+
+
 def _main_group(p: Pattern) -> RepeatGroup | None:
     return p.groups[0] if p.groups else None
 
@@ -87,7 +112,7 @@ def _score(ps: PatternSpec, content: SlideContent, used: Counter, exact_kind: bo
             slot_kinds = {k for it in g.items for k in (sl.kind for sl in it)}
             two_para = any(sl.kind == SlotKind.heading and len(sl.styles) >= 2 for it in g.items for sl in it)
             if any(i.value for i in content.items) and SlotKind.number not in slot_kinds:
-                score += 2.5
+                score += 4.5 if content.kind == SlideKind.kpi else 2.5   # KPI без крупных чисел теряет смысл
             # вместимость слота-числа: «01» в узкой рамке не вместит «1 150 ₽»
             longest = max((len(i.value) for i in content.items if i.value), default=0)
             numbers = [sl for it in g.items for sl in it if sl.kind == SlotKind.number]
@@ -97,7 +122,8 @@ def _score(ps: PatternSpec, content: SlideContent, used: Counter, exact_kind: bo
                 capacity = n0.bbox.w / (size * 0.62 * 12700)
                 if longest > capacity:
                     score += min(4.0, (longest - capacity) * 0.8)
-            if any(i.heading for i in content.items) and SlotKind.heading not in slot_kinds:
+            heading_matters = content.kind not in (SlideKind.kpi, SlideKind.timeline, SlideKind.bullets)
+            if heading_matters and any(i.heading for i in content.items) and SlotKind.heading not in slot_kinds:
                 score += 2.0
             if any(i.text for i in content.items) and not (slot_kinds & {SlotKind.text, SlotKind.caption}) \
                     and not two_para:
@@ -123,13 +149,15 @@ def _score(ps: PatternSpec, content: SlideContent, used: Counter, exact_kind: bo
         score += 2.0
     if not content.image and has_image_slot:
         score += 1.5                                         # фото-заглушку придётся убрать
+    score += _overflow_penalty(p, content)
     return score + 1.2 * used[p.id]                          # разнообразие: не повторять один образец подряд
 
 
-def choose_pattern(spec: TemplateSpec, content: SlideContent, used: Counter) -> PatternSpec:
+def choose_pattern(spec: TemplateSpec, content: SlideContent, used: Counter,
+                   variant: int = 1, avoid: str | None = None) -> PatternSpec:
     """Оцениваются все образцы разом: свой тип — без штрафа, запасной — по порядку пригодности, прочие —
     с большим штрафом. Так негодный образец «своего» типа (обложка без текстовых слотов) проигрывает
-    нормальному запасному."""
+    нормальному запасному. variant/avoid — смещения для вариантов вёрстки (см. VARIANTS)."""
     fallback = FALLBACK.get(content.kind, [])
     slide_area = spec.tokens.slide_w * spec.tokens.slide_h
 
@@ -140,9 +168,75 @@ def choose_pattern(spec: TemplateSpec, content: SlideContent, used: Counter) -> 
             tier = 1.0 + fallback.index(ps.kind)
         else:
             tier = 10.0
-        return tier + _score(ps, content, used, exact_kind=True, slide_area=slide_area)
+        score = tier + _score(ps, content, used, exact_kind=True, slide_area=slide_area)
+        return score + _variant_bias(ps, variant, avoid)
 
     return min(spec.patterns, key=total)
+
+
+def choose_with_score(spec: TemplateSpec, content: SlideContent, used: Counter, variant: int = 1,
+                      avoid: str | None = None) -> tuple[PatternSpec, float]:
+    """Как choose_pattern, но ещё и насколько хорошо образец подошёл (без смещения варианта)."""
+    ps = choose_pattern(spec, content, used, variant, avoid)
+    fallback = FALLBACK.get(content.kind, [])
+    tier = 0.0 if ps.kind == content.kind else (1.0 + fallback.index(ps.kind) if ps.kind in fallback else 10.0)
+    return ps, tier + _score(ps, content, used, exact_kind=True, slide_area=spec.tokens.slide_w * spec.tokens.slide_h)
+
+
+# ── варианты вёрстки ───────────────────────────────────────────────────────
+# Ось различий: одно содержимое, разный выбор образцов и форма графиков — все три по правилам шаблона.
+#   1 «Сбалансированный» — лучший образец для каждого слайда;
+#   2 «Визуальный»       — образцы с иллюстрациями, иконками, крупными числами; меньше текста;
+#   3 «Альтернативный»   — другой образец, чем в первом варианте, если есть сопоставимый по качеству.
+
+VARIANTS = {1: "Сбалансированный", 2: "Визуальный", 3: "Альтернативный"}
+# форма графика по вариантам: столбцы -> полосы -> линия (для рядов во времени), круг <-> кольцо
+_CHART_FORM = {
+    2: {"column": "bar", "line": "column", "pie": "doughnut", "doughnut": "pie", "bar": "column"},
+    3: {"column": "line", "bar": "line", "pie": "doughnut", "doughnut": "pie", "line": "column"},
+}
+_TIME = re.compile(r"^(19|20)\d\d|^Q[1-4]|^[IV]+\s|квартал|янв|фев|мар|апр|май|июн|июл|авг|сен|окт|ноя|дек", re.IGNORECASE)
+
+
+def _visual_weight(ps: PatternSpec) -> int:
+    p = ps.pattern
+    icons = sum(1 for it in (p.groups[0].items if p.groups else []) for sl in it if sl.kind in (SlotKind.icon, SlotKind.image))
+    pics = sum(1 for pic in p.pictures if not pic.from_layout)
+    numbers = sum(1 for sl in p.slots if sl.kind == SlotKind.number) + sum(
+        1 for it in (p.groups[0].items[:1] if p.groups else []) for sl in it if sl.kind == SlotKind.number)
+    return min(icons, 3) + min(pics, 2) + min(numbers, 2) + sum(1 for sl in p.slots if sl.kind == SlotKind.image)
+
+
+def _variant_bias(ps: PatternSpec, variant: int, avoid: str | None) -> float:
+    # смещения мягкие: вариант отличается там, где есть сопоставимая замена, но не ценой потери смысла
+    if variant == 2:
+        return -0.6 * min(_visual_weight(ps), 4)
+    if variant == 3 and avoid is not None and ps.pattern.id == avoid:
+        return 2.0                               # тот же образец, что в первом варианте, — только если нет замены
+    return 0.0
+
+
+def chart_for_variant(chart, variant: int):
+    """Альтернативная форма того же графика; линия — только для рядов во времени."""
+    if chart is None or variant not in _CHART_FORM:
+        return chart
+    new_type = _CHART_FORM[variant].get(chart.type, chart.type)
+    if new_type == "line" and not all(_TIME.search(c) for c in chart.categories):
+        new_type = "bar"
+    if new_type in ("pie", "doughnut") and (len(chart.series) != 1):
+        return chart
+    return chart.model_copy(update={"type": new_type})
+
+
+def select_patterns(spec: TemplateSpec, contents: list[SlideContent], variant: int = 1,
+                    avoid: list[str] | None = None) -> list[PatternSpec]:
+    used: Counter = Counter()
+    picks = []
+    for i, content in enumerate(contents):
+        ps = choose_pattern(spec, content, used, variant, avoid[i] if avoid else None)
+        used[ps.pattern.id] += 1
+        picks.append(ps)
+    return picks
 
 
 # ── раскладка ──────────────────────────────────────────────────────────────
@@ -189,17 +283,42 @@ def _assign_item(slots: list[Slot], item: Item, index: int) -> dict[int, list[st
         if s.kind == SlotKind.heading and s.shape_id not in out:
             v = take("heading", "value") or (None if has_text_slot else take("text"))
             out[s.shape_id] = [v] if v else []
-    for s in textual:                                    # 4. тексты и подписи
-        if s.kind in (SlotKind.text, SlotKind.caption) and s.shape_id not in out:
-            v = take("text", "heading")
-            out[s.shape_id] = [v] if v else []
+    text_slots = [s for s in textual if s.kind in (SlotKind.text, SlotKind.caption) and s.shape_id not in out]
+    for s in text_slots:                                 # 4. тексты и подписи
+        if len(text_slots) == 1 and free["value"] and (free["text"] or free["heading"]):
+            # слота под число нет — число первым абзацем, чтобы показатель не потерялся
+            out[s.shape_id] = [take("value"), take("text", "heading")]
+            continue
+        if len(text_slots) == 1 and free["heading"] and free["text"]:
+            # слот один, а у пункта и заголовок, и пояснение — оба абзацами, чтобы заголовок не пропал
+            out[s.shape_id] = [take("heading"), take("text")]
+            continue
+        v = take("text", "heading", "value")      # число без своего слота не должно теряться
+        out[s.shape_id] = [v] if v else []
     return out
 
 
+def _chrome(spec: TemplateSpec) -> tuple[set[str], set[str]]:
+    """Бегущий колонтитул и статичные номера страниц: текст в нижней/верхней полосе, повторённый на многих
+    образцах. Возвращает (образцы колонтитула, образцы номеров) — их заменяем, а не удаляем."""
+    h = spec.tokens.slide_h
+    band = [s for ps in spec.patterns for s in ps.pattern.slots
+            if s.sample and (s.bbox.y > h * 0.86 or s.bbox.bottom < h * 0.1)]
+    texts = Counter(s.sample for s in band if s.kind != SlotKind.number)
+    numbers = [s for s in band if s.kind == SlotKind.number and re.fullmatch(r"\d{1,2}", s.sample.strip())]
+    need = max(3, len(spec.patterns) // 3)
+    running = {t for t, n in texts.items() if n >= need}
+    pages = {s.sample for s in numbers} if len(numbers) >= need else set()
+    return running, pages
+
+
 class _Composer:
-    def __init__(self, spec: TemplateSpec, images: dict[str, bytes]):
+    def __init__(self, spec: TemplateSpec, images: dict[str, bytes], footer: str = ""):
         self.spec = spec
         self.images = images
+        self.running, self.pages = _chrome(spec)
+        self.footer = footer
+        self.index = 0
         t = spec.tokens
         self.body_font = t.fonts.body
         self.body_size = next((s.size_pt for s in t.type_scale if s.role == "body"), 14.0)
@@ -326,6 +445,124 @@ class _Composer:
                 if el is not None:
                     ops.offset_shape(el, 0, delta)
 
+    def compose_synth(self, slide, canvas: PatternSpec, content: SlideContent, report: SlideReport, roles,
+                      force_dark: bool) -> None:
+        """Своя композиция на холсте шаблона: заголовок и подзаголовок — в слоты рамки, остальное — рисуем."""
+        from prism.layout import synth
+
+        p = canvas.pattern
+        self.pattern, self.slide = p, slide
+        self.title_bottom = p.title.bbox.bottom if p.title else self.spec.tokens.margins.top
+        subtitle = synth._subtitle(p)
+        head = {p.title.shape_id} | ({subtitle.shape_id} if subtitle else set()) | (
+            {p.title_plate.shape_id} if p.title_plate else set())
+        chrome = self._chrome_slots(p)
+        synth.clear_canvas(slide, p, self.spec.tokens, head | {s.shape_id for s in chrome}, head)
+        self._fill_chrome(slide, p)
+        t = self.spec.tokens
+        on_dark = force_dark or bool(p.background and relative_luminance(p.background) < 0.3)
+        if force_dark:                                   # акцентный фон из палитры поверх рамки основного фона
+            slide.background.fill.solid()
+            slide.background.fill.fore_color.rgb = synth._rgb(roles.emph_bg)
+
+        self._fill(slide, p.title, [content.title], report)
+        top = self.title_bottom
+        lead = content.subtitle if content.kind not in (SlideKind.section, SlideKind.closing, SlideKind.quote) else None
+        if subtitle is not None:
+            if lead and self._fill(slide, subtitle, [lead], report):
+                top = max(top, subtitle.bbox.bottom)
+            elif not lead:
+                ops.remove_shape(slide, subtitle.shape_id)
+        if force_dark:
+            for sid in (p.title.shape_id, subtitle.shape_id if subtitle else None):
+                el = ops.find_shape(slide, sid) if sid else None
+                if el is not None:
+                    ops.set_text_color(el, roles.on_emph)
+
+        gap = t.slide_h // 25
+        # низ зоны — над колонтитулом/номером, если они внизу
+        bottom = min([t.slide_h - t.margins.bottom] + [c.bbox.y - gap // 2 for c in chrome
+                                                       if c.bbox.y > t.slide_h * 0.5])
+        area = synth.Area(box=BBox(x=t.margins.left, y=top + gap, w=t.slide_w - t.margins.left - t.margins.right,
+                                   h=bottom - top - gap * 3 // 2), gap=gap)
+        items = content.items
+        kind = content.kind
+        if kind == SlideKind.kpi and items:
+            ok = synth.kpi_row(slide, area, items[:4], roles, on_dark)
+        elif kind == SlideKind.chart and content.chart:
+            ok = synth.chart_focus(slide, area, content, roles,
+                                   lambda sl, box, ch: ops.add_chart(sl, box, ch, roles.series, self.body_font,
+                                                                     roles.ink, self.body_size))
+        elif kind in (SlideKind.process, SlideKind.timeline) and len(items) >= 2:
+            ok = synth.steps(slide, area, items[:6], roles, timeline=kind == SlideKind.timeline)
+        elif kind == SlideKind.table and content.table:
+            rows = len(content.table.rows) + 1
+            box = BBox(x=area.box.x, y=area.box.y, w=area.box.w,
+                       h=min(area.box.h, int(self.body_size * 2.4 * fit.EMU_PER_PT) * rows))
+            ops.add_table(slide, box, content.table, roles.accent, roles.on_emph, roles.ink, self.body_font,
+                          max(self.body_size - 1, 9), roles.surface)
+            ok = True
+        elif kind in (SlideKind.section, SlideKind.closing, SlideKind.quote):
+            ok = synth.statement(slide, area, content, roles, on_dark)
+        elif kind == SlideKind.bullets and items:
+            ok = synth.bullets(slide, area, items[:6], roles)
+        elif items:
+            ok = synth.cards_grid(slide, area, items[:6], roles)
+        else:
+            ok = synth.statement(slide, area, content, roles, on_dark)
+        if not ok:
+            report.warnings.append(f"текст не помещается (своя композиция {kind.value})")
+        self._push_below_title()
+        if content.notes:
+            slide.notes_slide.notes_text_frame.text = content.notes
+
+    def _chrome_slots(self, p: Pattern) -> list[Slot]:
+        h = self.spec.tokens.slide_h
+        return [s for s in p.slots if (s.sample in self.running or s.sample in self.pages)
+                and (s.bbox.y > h * 0.86 or s.bbox.bottom < h * 0.1)]
+
+    def _fill_chrome(self, slide, p: Pattern) -> set[int]:
+        """Колонтитул — короткое название колоды (в регистре образца), номер — настоящий номер слайда."""
+        done = set()
+        for s in self._chrome_slots(p):
+            if s.sample in self.pages:
+                text_ = f"{self.index:0{len(s.sample.strip())}d}"
+            else:
+                text_ = self.footer.upper() if s.sample.isupper() else self.footer
+            if text_ and self._fill(slide, s, [text_]):
+                done.add(s.shape_id)
+        return done
+
+    def _drop_orphan_plates(self, slide) -> None:
+        """Плашка («ГОД 20__», полоса квартала, блок дерева) без текста внутри — пустой прямоугольник.
+        Если все текстовые слоты, что лежали на ней, убраны, а заполненных не осталось, — убираем и её."""
+        p = self.pattern
+        t = self.spec.tokens
+        textual = [s for s in p.slots if s.kind in _TEXTUAL] + [
+            s for g in p.groups for it in g.items for s in it if s.kind in _TEXTUAL]
+        if p.title:
+            textual.append(p.title)
+        gone = [s.bbox for s in textual if ops.find_shape(slide, s.shape_id) is None]
+        alive = [s.bbox for s in textual if ops.find_shape(slide, s.shape_id) is not None]
+        if not gone:
+            return
+
+        def inside(inner: BBox, outer: BBox) -> bool:
+            tol = t.slide_w // 150
+            cx, cy = inner.x + inner.w / 2, inner.y + inner.h / 2
+            return outer.x - tol <= cx <= outer.right + tol and outer.y - tol <= cy <= outer.bottom + tol
+
+        for box in p.decor_boxes:
+            b = box.bbox
+            if box.service or box.bleed or b.w > 0.95 * t.slide_w or b.h > 0.5 * t.slide_h:
+                continue
+            if b.h < t.slide_h // 100:
+                # тонкая линия-разделитель: относится к тексту сразу под/над ней
+                pad = t.slide_h // 12
+                b = BBox(x=b.x, y=b.y - pad, w=b.w, h=b.h + 2 * pad)
+            if any(inside(g, b) for g in gone) and not any(inside(a, b) for a in alive):
+                ops.remove_shape(slide, box.shape_id)
+
     def _clear(self, slide, slot: Slot) -> None:
         if slot.kind in _TEXTUAL or (slot.kind == SlotKind.image and slot.sample):
             ops.remove_shape(slide, slot.shape_id)
@@ -398,12 +635,13 @@ class _Composer:
         self.pattern = p
         self.slide = slide
         self.title_bottom = p.title.bbox.bottom if p.title else self.spec.tokens.margins.top
+        chrome = self._fill_chrome(slide, p)
         if p.title:
             self._fill(slide, p.title, [content.title], report)
 
         # крупные одиночные числа («герой» слайда) берут первые показатели, подпись — из блока под числом
         items = list(content.items)
-        singles = [s for s in p.slots if s.kind in _TEXTUAL]
+        singles = [s for s in p.slots if s.kind in _TEXTUAL and s.shape_id not in chrome]
         taken: set[int] = set()
         heroes = sorted((s for s in singles if s.kind == SlotKind.number), key=lambda s: -s.bbox.area)
         while heroes and items and items[0].value:
@@ -422,10 +660,17 @@ class _Composer:
         # остальные пункты раскладываются по группам образца: основная берёт сколько вмещает, следующие — остаток
         placed_items = bool(p.groups) and bool(items)
         rest, start = items, 1
-        for g in p.groups:
+        placed = 0
+        for gi, g in enumerate(p.groups):
+            only_numbers = all(sl.kind == SlotKind.number for it in g.items for sl in it)
+            if gi and only_numbers and placed:
+                # отдельная группа номеров (кружки «1…4» цикла) — нумеруем, пунктов она не забирает
+                self._fill_group(slide, g, [Item() for _ in range(min(placed, g.count))], 1, report)
+                continue
             chunk, rest = rest[: g.count], rest[g.count:]
             self._fill_group(slide, g, chunk, start, report)
             start += len(chunk)
+            placed += len(chunk)
         if placed_items and rest:
             report.warnings.append(f"не поместилось пунктов: {len(rest)} из {len(items)}")
 
@@ -453,6 +698,15 @@ class _Composer:
                 taken.add(target.shape_id)
         if items and not placed_items:
             report.warnings.append("пункты некуда поставить: в образце нет ни группы, ни текстового блока")
+        # одиночные порядковые номера («1», «02» в кружках цикла) — часть схемы шагов: при заполненных шагах
+        # оставляем их как в образце, лишние (шагов меньше) убираем
+        ordinals = sorted((s for s in singles if s.kind == SlotKind.number and s.shape_id not in taken
+                           and re.fullmatch(r"0?\d", s.sample.strip())), key=lambda s: int(s.sample))
+        if placed_items and ordinals:
+            n_steps = len(content.items)
+            for s in ordinals:
+                if int(s.sample) <= n_steps:
+                    taken.add(s.shape_id)
         for s in singles:
             if s.shape_id not in taken:
                 self._clear(slide, s)
@@ -474,6 +728,11 @@ class _Composer:
         text_color = self._text_color(p)
         example = None
         own = [pic for pic in p.pictures if not pic.from_layout and not pic.bleed]
+        if ps.kind == SlideKind.chart and own and not (content.chart or content.table):
+            # в образце-графике крупные картинки — это примеры чужих диаграмм; без своих данных — убираем
+            for pic in own:
+                ops.remove_shape(slide, pic.shape_id)
+            own = []
         if (content.chart or content.table) and not (chart_slots or table_slots) \
                 and ps.kind in (SlideKind.chart, SlideKind.image) and own:
             # примеры графиков картинками убираем все, настоящий график встаёт на их общее место
@@ -498,25 +757,76 @@ class _Composer:
             ops.add_table(slide, box, content.table, self.chart_colors[0], "FFFFFF", text_color, self.body_font,
                           max(self.body_size - 2, 9), None)
 
+        self._drop_orphan_plates(slide)
         self._push_below_title()
         if content.notes:
             slide.notes_slide.notes_text_frame.text = content.notes
 
 
+# когда вариант берёт свою композицию вместо образца шаблона
+POOR_FIT = 7.0          # оценка образца хуже этой — своя композиция честнее, чем натянутый образец
+_SYNTH_VISUAL = {SlideKind.kpi, SlideKind.chart, SlideKind.timeline, SlideKind.process,
+                 SlideKind.section, SlideKind.closing, SlideKind.quote}
+_SYNTH_ANY = _SYNTH_VISUAL | {SlideKind.cards, SlideKind.bullets, SlideKind.table, SlideKind.agenda,
+                              SlideKind.two_column, SlideKind.comparison}
+_EMPHASIS = {SlideKind.section, SlideKind.closing, SlideKind.quote}
+SYNTH_KINDS = _SYNTH_ANY                 # типы, которые вёрстка соберёт сама, даже если в шаблоне нет образца
+
+
+def synth_mode(content: SlideContent, score: float, variant: int) -> bool:
+    if content.kind not in _SYNTH_ANY:
+        return False                     # титул, картинка, команда — только образцы шаблона
+    if content.kind == SlideKind.chart and content.chart is None:
+        return False
+    if variant == 2:
+        return content.kind in _SYNTH_VISUAL or (content.kind == SlideKind.cards and len(content.items) <= 4) \
+            or score >= POOR_FIT
+    if variant == 3:
+        return content.kind == SlideKind.table or score >= POOR_FIT
+    return score >= POOR_FIT and content.kind not in _EMPHASIS
+
+
+def _short_title(title: str, limit: int = 32) -> str:
+    """Для колонтитула: начало заголовка до двоеточия/тире, не длиннее limit."""
+    head = re.split(r"[:—–.]", title, maxsplit=1)[0].strip()
+    if len(head) <= limit:
+        return head
+    cut = head[:limit].rsplit(" ", 1)[0]
+    return cut or head[:limit]
+
+
 def compose_deck(template_pptx: str | Path, spec: TemplateSpec, contents: list[SlideContent],
-                 images: dict[str, bytes] | None = None) -> tuple[bytes, list[SlideReport]]:
-    """Колода по шаблону: .pptx в байтах + отчёт о раскладке (для аудита)."""
+                 images: dict[str, bytes] | None = None, variant: int = 1,
+                 avoid: list[str] | None = None) -> tuple[bytes, list[SlideReport]]:
+    """Колода по шаблону: .pptx в байтах + отчёт о раскладке (для аудита).
+    variant — вариант вёрстки (1..3), avoid — образцы первого варианта по слайдам (для третьего)."""
+    from prism.layout import synth
+
     prs = Presentation(str(template_pptx))
     originals = list(prs.slides)
-    composer = _Composer(spec, images or {})
+    footer = _short_title(contents[0].title) if contents else ""
+    composer = _Composer(spec, images or {}, footer)
+    canvases = {False: synth.pick_canvas(spec), True: synth.pick_canvas(spec, dark=True)}
+    roles = synth.roles(spec.tokens)
     used: Counter = Counter()
     reports = []
     for i, content in enumerate(contents, 1):
-        ps = choose_pattern(spec, content, used)
-        used[ps.pattern.id] += 1
-        slide = ops.duplicate_slide(prs, originals[ps.pattern.slide_index - 1])
-        report = SlideReport(index=i, pattern=ps.pattern.id, kind=ps.kind.value)
-        composer.compose(slide, ps, content, report)
+        if content.chart is not None and variant != 1:
+            content = content.model_copy(update={"chart": chart_for_variant(content.chart, variant)})
+        composer.index = i
+        ps, score = choose_with_score(spec, content, used, variant, avoid[i - 1] if avoid else None)
+        canvas = canvases[False]
+        if synth_mode(content, score, variant) and canvas is not None:
+            dark = variant == 2 and content.kind in _EMPHASIS
+            base = canvases[True] if dark and canvases[True] else canvas
+            slide = ops.duplicate_slide(prs, originals[base.pattern.slide_index - 1])
+            report = SlideReport(index=i, pattern=f"synth:{content.kind.value}<-{base.pattern.id}", kind=content.kind.value)
+            composer.compose_synth(slide, base, content, report, roles, dark and base is not canvases[True])
+        else:
+            used[ps.pattern.id] += 1
+            slide = ops.duplicate_slide(prs, originals[ps.pattern.slide_index - 1])
+            report = SlideReport(index=i, pattern=ps.pattern.id, kind=ps.kind.value)
+            composer.compose(slide, ps, content, report)
         reports.append(report)
     ops.drop_slides(prs, len(originals))
     out = io.BytesIO()

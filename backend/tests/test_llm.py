@@ -32,7 +32,7 @@ def test_extract_json(raw):
 
 def test_factory_passes_thinking_switch_and_top_k():
     f = LLMFactory(load_config(env=ENV))
-    m = f.for_role("outline_planner")
+    m = f.for_role("outline_planner", think=True)
     assert m.extra_body == {"top_k": 20, "chat_template_kwargs": {"enable_thinking": True}}
     assert f.for_role("slide_writer").extra_body["chat_template_kwargs"] == {"enable_thinking": False}
     assert f.for_role("slide_writer") is f.for_role("slide_writer")
@@ -42,7 +42,7 @@ def test_factory_passes_thinking_switch_and_top_k():
 def test_openrouter_style_uses_reasoning_switch():
     f = LLMFactory(load_config(env=ENV | {"LLM_API_STYLE": "openrouter"}))
     assert f.for_role("slide_writer").extra_body == {"reasoning": {"enabled": False, "exclude": True}}
-    assert f.for_role("outline_planner").extra_body["reasoning"]["enabled"] is True
+    assert f.for_role("outline_planner", think=True).extra_body["reasoning"]["enabled"] is True
     assert LLMFactory(load_config(env=ENV | {"LLM_API_STYLE": "plain"})).for_role("slide_writer").extra_body == {}
 
 

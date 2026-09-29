@@ -187,6 +187,24 @@ def set_paragraphs(el: etree._Element, texts: list[str]) -> bool:
     return True
 
 
+def set_text_color(el: etree._Element, hex_color: str) -> None:
+    """Перекрашивает весь текст фигуры (заголовок на акцентном тёмном фоне)."""
+    tx_body = el.find(qn("p:txBody"))
+    if tx_body is None:
+        return
+    for rpr in [*tx_body.iter(qn("a:rPr")), *tx_body.iter(qn("a:endParaRPr"))]:
+        for old in rpr.findall(qn("a:solidFill")):
+            rpr.remove(old)
+        fill = etree.Element(qn("a:solidFill"))
+        etree.SubElement(fill, qn("a:srgbClr")).set("val", hex_color)
+        # solidFill должен идти раньше шрифтов (latin/ea/cs) по схеме DrawingML
+        anchor = next((c for c in rpr if etree.QName(c).localname in ("latin", "ea", "cs", "sym", "hlinkClick")), None)
+        if anchor is not None:
+            anchor.addprevious(fill)
+        else:
+            rpr.append(fill)
+
+
 def paragraph_count(el: etree._Element) -> int:
     tx_body = el.find(qn("p:txBody"))
     return len(_styled_paragraphs(tx_body)) if tx_body is not None else 0

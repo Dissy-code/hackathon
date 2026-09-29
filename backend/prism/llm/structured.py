@@ -72,12 +72,23 @@ async def ainvoke_structured[T: BaseModel](
     for _ in range(retries + 1):
         try:
             reply = await bound.ainvoke(history)
+        except openai.LengthFinishReasonError:
+            # модель упёрлась в лимит токенов (обычно — зациклилась на повторе): просим компактно ещё раз
+            last_error = "ответ оборван: превышен лимит длины"
+            history = [*messages, HumanMessage(
+                "Предыдущий ответ был слишком длинным и оборвался. Верни компактный JSON строго по схеме, "
+                "без повторов и лишних полей.")]
+            continue
         except openai.BadRequestError as e:
             if not use_json_schema or "response_format" not in str(e):
-                raise
+                raise StructuredOutputError(schema, 1, f"провайдер отклонил запрос: {e}", "") from e
             # провайдер не поддерживает response_format — запоминаем и повторяем со схемой в промпте
             _NO_RESPONSE_FORMAT.add(_model_key(model))
             return await ainvoke_structured(model, messages, schema, retries=retries, use_json_schema=False)
+        except (openai.APIError, TimeoutError) as e:
+            # сеть, 5xx, таймаут: для вызывающего это такая же неудача, как невалидный ответ
+            last_error = f"{type(e).__name__}: {e}"
+            continue
         raw = reply.content if isinstance(reply.content, str) else json.dumps(reply.content, ensure_ascii=False)
         try:
             return schema.model_validate_json(_extract_json(raw))

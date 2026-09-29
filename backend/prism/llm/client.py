@@ -42,6 +42,9 @@ def build_chat_model(r: ResolvedRole, **overrides) -> ChatOpenAI:
         top_p=params["top_p"],
         max_tokens=params["max_tokens"],
         extra_body=_extra_body(r.llm.api_style, params["top_k"], params["think"]),
+        # потоком: соединение не простаивает, и шлюз провайдера не рвёт долгую генерацию по таймауту
+        streaming=True,
+        stream_usage=True,
     )
 
 

@@ -177,8 +177,10 @@ class Smoke:
         msgs = skill.render(
             purpose="product",
             audience="инвесторы посевной стадии",
-            n_slides=10,
+            n_slides="exactly 10",
             language="ru",
+            kinds=["title", "cards", "kpi", "chart", "process", "timeline", "table", "section", "closing"],
+            images=[],
             brief="Запуск сервиса доставки еды в Казани: питч для инвесторов.",
             materials=[
                 {"id": "m1", "text": "Рынок доставки еды в Казани в 2025 году — 14 млрд ₽, рост 21% в год."},
@@ -224,7 +226,8 @@ async def run(args: argparse.Namespace) -> int:
 
     out_dir = BACKEND_DIR / "data" / "smoke"
     out_dir.mkdir(parents=True, exist_ok=True)
-    out = out_dir / f"{text_role.model}-{datetime.now(UTC):%Y%m%d-%H%M%S}.json"
+    safe = text_role.model.replace("/", "_").replace(":", "_")
+    out = out_dir / f"{safe}-{datetime.now(UTC):%Y%m%d-%H%M%S}.json"
     out.write_text(json.dumps({
         "model": text_role.model, "base_url": text_role.llm.base_url,
         "results": [asdict(r) for r in results],

@@ -1,0 +1,41 @@
+# Три варианта колоды: одно содержание брифа, разная подача. Ось различий — плотность, группировка слайдов
+# и способ визуализации (раздел 5 ТЗ). Все три — в целевом объёме 10–15 слайдов и по правилам шаблона.
+#
+#   slides  — сколько слайдов просить у планировщика, если пользователь не задал число сам;
+#   planner — директива скиллу outline_planner (как строить план);
+#   writer  — директива скиллу slide_writer (как писать текст);
+#   layout  — режим вёрстки: balanced | visual | alternative (см. prism/layout/compose.py).
+
+variants:
+  1:
+    label: Сбалансированный
+    layout: balanced
+    slides: "11-13"
+    planner: >
+      Balanced deck: mix text and visual slides; use kpi or chart where the brief has numbers,
+      cards or process for parallel points and steps; one section divider per 4-5 slides at most.
+    writer: >
+      Standard limits from the rules.
+
+  2:
+    label: Визуальный
+    layout: visual
+    slides: "12-14"
+    planner: >
+      Visual deck: more slides, each carries one idea. Every number from the brief becomes a kpi or a chart
+      slide; sequences become process or timeline; parallel points become cards with at most 4 items.
+      Use at most one bullets slide. Add a section divider before each major part of the story.
+    writer: >
+      Very short texts: item headings max 3 words, item texts max 8 words, subtitles max 8 words.
+      Prefer numbers over words wherever the brief has them.
+
+  3:
+    label: Компактный
+    layout: alternative
+    slides: "10"
+    planner: >
+      Compact deck for reading, not presenting: merge related topics into one slide; prefer table,
+      comparison, two_column and cards with 4-6 items; no section dividers; no slide without substance.
+    writer: >
+      Denser content is welcome: item texts up to 16 words, tables up to 6 rows,
+      cards and lists with 4-6 items.

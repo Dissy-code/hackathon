@@ -79,6 +79,7 @@ class Picture(BaseModel):
     cutout: bool                               # с прозрачностью (вырезанный объект), а не прямоугольное фото
     from_layout: bool = False                  # нарисована в макете: мешает, но удалить со слайда нельзя
     bleed: bool = False                        # выходит за край слайда (фоновая декорация)
+    service: bool = False                      # колонтитул / номер слайда / дата — часть рамки, не контент
 
 
 class Pattern(BaseModel):
@@ -94,6 +95,7 @@ class Pattern(BaseModel):
     decor: list[int]                           # id фигур, которые копируются как есть
     pictures: list[Picture] = Field(default_factory=list)
     title_plate: Picture | None = None         # плашка под заголовком (подгоняется под длину текста)
+    decor_boxes: list[Picture] = Field(default_factory=list)   # вся не-контентная графика слайда верхнего уровня
     text_chars: int                            # объём текста в образце
 
 
@@ -535,4 +537,10 @@ def build_pattern(raw: TemplateRaw, slide: SlideRaw, tokens: DesignTokens) -> Pa
         ],
         text_chars=sum(len(s.text.strip()) for s in slide.shapes if not s.prompt_text),
         title_plate=Picture(shape_id=plate.id, bbox=plate.bbox, cutout=False) if plate else None,
+        decor_boxes=[
+            Picture(shape_id=s.id, bbox=_clip(s.bbox, raw), cutout=False,
+                    bleed=is_bleed(s.bbox, raw.slide_w, raw.slide_h),
+                    service=bool(s.placeholder and s.placeholder.type in _SERVICE_PH))
+            for s in slide.shapes if s.parent_group is None and s.id not in slot_ids
+        ],
     )
