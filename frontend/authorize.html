@@ -64,11 +64,8 @@ body{
 /* ── Логотип сверху ── */
 .logo{
   position: fixed;
-  left: 46px; top: 36px;
-  font-size: 42px;
-  line-height: 0;
-  letter-spacing: -0.3em;
-  color: var(--orange);
+  left: 49px; top: 16.5px;
+  width: 82.1px; height: 44px;
   z-index: 5;
   pointer-events: none;
   user-select: none;
@@ -410,7 +407,7 @@ html.has-cur, html.has-cur *{ cursor: none !important; }
 
 /* ── Адаптив ── */
 @media (max-width: 480px){
-  .logo{ left: 24px; top: 24px; font-size: 32px; }
+  .logo{ left: 24px; top: 24px; width: 59.7px; height: 32px; }
   .card{ padding: 26px 22px 22px; border-radius: 22px; }
   .title{ font-size: 22px; }
   .subtitle{ font-size: 12px; }
@@ -426,7 +423,7 @@ html.has-cur, html.has-cur *{ cursor: none !important; }
 <canvas class="gridc" id="grid"></canvas>
 
 <!-- Логотип -->
-<div class="logo">ЦДС</div>
+<img class="logo" src="assets/logo.svg" alt="ЦДС" width="584" height="313">
 
 <!-- Сцена с карточкой -->
 <main class="stage">

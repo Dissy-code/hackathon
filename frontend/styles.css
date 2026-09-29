@@ -123,14 +123,15 @@ body {
   height: 62px;
   z-index: 2;                       /* иконка профиля поверх капли аккаунта */
 }
+/* знак ЦДС (assets/logo.svg). Размер и место подобраны по прежнему
+   начертанию: тот же левый край чернил (x = 49) и та же оптическая
+   середина (y = 43.25), которую занимала надпись. */
 .logo {
   position: absolute;
-  left: 46px;
-  top: 40.6px;                      /* по центру с пилюлей навигации (её центр — y = 44.5) */
-  font-size: 42px;
-  line-height: 0;
-  letter-spacing: -0.3em;          /* буквы входят друг в друга, как в логотипе */
-  color: var(--orange);
+  left: 49px;
+  top: 21.3px;
+  width: 82.1px;
+  height: 44px;
 }
 
 /* liquid glass — общий вид для панелей интерфейса */
@@ -1176,10 +1177,16 @@ body {
 .acc-list li:last-child { border-bottom: 0; }
 .acc-list b { font-weight: inherit; color: var(--orange); }
 
+/* ссылка на страницу входа, оформлена как кнопка */
 .acc-cta {
   margin-top: auto;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   height: 22px;
   border: 0;
+  text-decoration: none;
   border-radius: 999px;
   font-family: var(--font);
   font-size: 8.5px;

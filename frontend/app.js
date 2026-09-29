@@ -343,7 +343,6 @@
       acc(false);
     });
     addEventListener('keydown', (e) => { if (e.key === 'Escape') acc(false); });
-    accMenu.querySelector('.acc-cta').addEventListener('click', (e) => e.preventDefault());
   }
 
   if (vframe) {

@@ -546,7 +546,9 @@ export default function Configurator() {
         <div className={accOpen ? 'scene is-acc' : 'scene'} ref={sceneRef}>
 
           <header className="top">
-            <a className="logo" href="index.html" aria-label="На главную">ЦДС</a>
+            <a className="logo" href="index.html" aria-label="На главную">
+              <img src="assets/logo.svg" alt="" width={584} height={313} />
+            </a>
 
             <nav
               className="nav glass"
@@ -652,7 +654,7 @@ export default function Configurator() {
               <div className={`view view--gen${view === 'gen' ? ' is-on' : ''}`}>
                 <div className="pane pane--gen">
                   <div className="gen">
-                    <div className="gen__logo" ref={genLogoRef}>ЦДС</div>
+                    <div className="gen__logo" ref={genLogoRef} role="img" aria-label="ЦДС" />
                     <div className="gen__word">
                       <span ref={genWordRef} />
                       <i className="gen__caret" ref={genCaretRef} />

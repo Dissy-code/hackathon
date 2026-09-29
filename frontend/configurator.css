@@ -59,16 +59,16 @@ body {
 /* ══════════ Шапка ══════════ */
 .top { position: absolute; left: 0; top: 0; right: 0; height: 60px; z-index: 3; }
 
+/* знак ЦДС (assets/logo.svg) — на месте прежней надписи:
+   тот же левый край чернил (x = 42.2) и та же середина (y = 27.1) */
 .logo {
   position: absolute;
-  left: 39.7px;
-  top: 25.2px;
-  font-size: 38px;
-  line-height: 0;
-  letter-spacing: -.3em;       /* буквы входят друг в друга, как в логотипе */
-  color: var(--orange);
-  text-decoration: none;
+  left: 42.2px;
+  top: 7.1px;
+  width: 74.6px;
+  height: 40px;
 }
+.logo img { display: block; width: 100%; height: 100%; }
 
 /* ── Стекло панелей интерфейса (как .glass на главной) ── */
 .glass {
@@ -582,20 +582,17 @@ body {
 /* Надпись ЦДС закрашивается по диагонали: под текстом лежит градиент,
    у которого резкий стык белого и оранжевого едет по --fill. */
 .gen__logo {
-  font-size: 38px;
-  line-height: 1;
-  letter-spacing: -.3em;
-  padding-right: .3em;         /* компенсируем отрицательный трекинг */
+  width: 70.9px;
+  height: 38px;
   background-image: linear-gradient(
     118deg,
     var(--orange) 0%,
     var(--orange) calc(var(--fill, 0%) - 4%),
     #ffffff calc(var(--fill, 0%) + 4%),
     #ffffff 100%);
-  background-clip: text;
-  -webkit-background-clip: text;
-  color: transparent;
-  -webkit-text-fill-color: transparent;
+  /* градиент виден только внутри знака — маска той же формы */
+  -webkit-mask: url("assets/logo.svg") no-repeat center / contain;
+  mask: url("assets/logo.svg") no-repeat center / contain;
 }
 .gen__word {
   position: relative;
