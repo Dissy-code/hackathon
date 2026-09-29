@@ -792,11 +792,19 @@ html.has-cur * { cursor: none !important; }
 
 /* холст: слайд целиком, с сохранением пропорций */
 .canvas--real { background: rgba(0,0,0,.4); }
-.canvas__img {
+/* слайд вписан в рамку холста с сохранением пропорций; рамки находок аудита — поверх, в долях слайда */
+.canvas__frame {
   position: absolute;
   inset: 8px 8px 30px;
-  width: calc(100% - 16px);
-  height: calc(100% - 38px);
+  display: grid;
+  place-items: center;
+}
+.canvas__slide { position: relative; width: 100%; height: 100%; }
+.canvas__img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   object-fit: contain;
   animation: slideIn .3s ease-out both;
 }
@@ -851,3 +859,179 @@ html.has-cur * { cursor: none !important; }
 /* вариант колоды — рядом с выбором шаблона, но отделён тонкой чертой */
 .show-bar__tabs + .show-bar__tabs { padding-left: 6px; border-left: 0.5px solid rgba(255,255,255,.18); }
 .chip--variant.is-on { background: rgba(221,94,17,.34); }
+
+
+/* ══════════ Аудит ══════════
+   Панель встаёт справа от холста, холст сужается. Цвета находок: ошибка — красная,
+   замечание — янтарная; всё остальное — в гамме окна (стекло, оранжевый акцент). */
+.view--show .canvas { transition: width .38s cubic-bezier(.22, 1.05, .35, 1); }
+.view--show.is-audit .canvas { width: 330px; }
+
+.chip:disabled { opacity: .35; cursor: default; transform: none; }
+.chip--audit.is-on { border-color: var(--orange); color: #fff; background: rgba(221,94,17,.22); }
+
+.thumb__flag {
+  position: absolute;
+  right: 4px; top: 4px;
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(0,0,0,.45);
+}
+.thumb__flag--error   { background: #ff4f3d; }
+.thumb__flag--warning { background: #f2b43c; }
+
+.canvas__mark {
+  position: absolute;
+  padding: 0;
+  border-radius: 3px;
+  background: transparent;
+  cursor: pointer;
+  opacity: .55;
+  transition: opacity .2s, box-shadow .2s, background .2s;
+}
+.canvas__mark--error   { border: 1px solid #ff4f3d; }
+.canvas__mark--warning { border: 1px dashed #f2b43c; }
+.canvas__mark:hover { opacity: .9; }
+.canvas__mark.is-focus {
+  opacity: 1;
+  border-width: 1.5px;
+  background: rgba(221,94,17,.14);
+  box-shadow: 0 0 0 3px rgba(221,94,17,.25), 0 0 18px rgba(221,94,17,.35);
+  animation: markPulse 1.4s ease-in-out infinite;
+}
+@keyframes markPulse { 50% { box-shadow: 0 0 0 5px rgba(221,94,17,.12), 0 0 24px rgba(221,94,17,.25); } }
+
+.audit {
+  position: absolute;
+  left: 474px;
+  top: 17.2px;
+  width: 179px;
+  height: 249.3px;
+  display: flex;
+  flex-direction: column;
+  padding: 7px 7px 6px;
+  border-radius: 14px;
+  background: rgba(255,255,255,.045);
+  border: 0.5px solid rgba(255,255,255,.14);
+  box-shadow: inset 0 0.5px 0 rgba(255,255,255,.22), 0 16px 40px rgba(0,0,0,.45);
+  font-size: 6.5px;
+  animation: auditIn .38s cubic-bezier(.22, 1.05, .35, 1) both;
+}
+@keyframes auditIn { from { opacity: 0; transform: translateX(12px); } to { opacity: 1; transform: none; } }
+
+.audit__head { display: flex; align-items: baseline; gap: 6px; padding: 0 2px; }
+.audit__title { font-size: 9px; font-weight: 700; letter-spacing: .01em; }
+.audit__sum { margin-left: auto; display: flex; align-items: center; gap: 3px; font-size: 5.8px; color: rgba(255,255,255,.6); white-space: nowrap; }
+.audit__dot { display: inline-block; width: 4.5px; height: 4.5px; border-radius: 50%; margin-left: 3px; }
+.audit__dot--error   { background: #ff4f3d; }
+.audit__dot--warning { background: #f2b43c; }
+
+.audit__tools { display: flex; gap: 4px; margin: 6px 0 5px; }
+.audit__tools .chip { height: 14px; line-height: 14px; font-size: 5.8px; padding: 0 7px; }
+.chip--ai { border-color: rgba(221,94,17,.55); color: #ffb98c; }
+.chip--ai.is-busy { animation: aiBusy 1.1s ease-in-out infinite alternate; opacity: 1; }
+@keyframes aiBusy { from { background: rgba(221,94,17,.06); } to { background: rgba(221,94,17,.3); } }
+
+.audit__list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,.2) transparent;
+  padding-right: 2px;
+}
+.audit__empty { margin: 14px 0; text-align: center; font-size: 6px; color: rgba(255,255,255,.5); }
+.audit__empty--err { color: #ff9a8c; }
+
+.audit__item {
+  display: grid;
+  grid-template-columns: 9px 1fr;
+  column-gap: 5px;
+  row-gap: 3px;
+  margin-bottom: 4px;
+  padding: 5px 5px 5px 4px;
+  border-radius: 8px;
+  border-left: 1.5px solid transparent;
+  background: rgba(255,255,255,.035);
+  transition: background .2s, box-shadow .2s;
+}
+.audit__item--error   { border-left-color: #ff4f3d; }
+.audit__item--warning { border-left-color: #f2b43c; }
+.audit__item.is-focus { background: rgba(221,94,17,.13); }
+.audit__item.is-picked { box-shadow: inset 0 0 0 0.5px rgba(221,94,17,.7); }
+
+.audit__check {
+  width: 9px; height: 9px;
+  margin-top: 1px;
+  padding: 0;
+  border-radius: 3px;
+  border: 0.5px solid rgba(255,255,255,.45);
+  background: transparent;
+  cursor: pointer;
+  position: relative;
+}
+.audit__check[aria-pressed="true"] { background: var(--orange); border-color: var(--orange); }
+.audit__check[aria-pressed="true"]::after {
+  content: "";
+  position: absolute;
+  left: 2.7px; top: 0.8px;
+  width: 2.2px; height: 4.4px;
+  border: solid #000;
+  border-width: 0 1px 1px 0;
+  transform: rotate(45deg);
+}
+.audit__check:disabled { opacity: .2; cursor: default; }
+.audit__check:focus-visible { outline: 1.5px solid var(--orange); outline-offset: 1.5px; }
+
+.audit__body {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  min-width: 0;
+}
+.audit__meta { display: flex; align-items: center; gap: 4px; margin-bottom: 2px; }
+.audit__meta b { font-size: 5.8px; font-weight: 700; color: var(--orange); }
+.audit__tag { font-style: normal; font-size: 5.2px; letter-spacing: .04em; text-transform: uppercase; color: rgba(255,255,255,.45); }
+.audit__tag--ai { color: #ffb98c; }
+.audit__msg { display: block; font-size: 6.1px; line-height: 1.38; color: rgba(255,255,255,.85); overflow-wrap: anywhere; }
+
+.audit__fixes { grid-column: 2; display: flex; flex-wrap: wrap; gap: 3px; }
+.audit__fixes .chip { height: 12.5px; line-height: 12.5px; font-size: 5.3px; padding: 0 6px; max-width: 100%; }
+.audit__fix1 { grid-column: 2; font-size: 5.4px; color: #ffb98c; }
+
+.audit__foot { margin-top: 5px; padding-top: 5px; border-top: 0.5px solid rgba(255,255,255,.1); }
+.audit__note { margin: 0 0 4px; font-size: 5.6px; line-height: 1.35; color: rgba(255,255,255,.62); }
+.audit__actions { display: flex; justify-content: space-between; gap: 4px; }
+.audit__actions .chip { height: 15px; line-height: 15px; font-size: 6px; }
+.audit__go { font-weight: 700; padding: 0 10px; max-width: none; }
+
+/* при открытом аудите холст уже — панель под слайдом в две строки:
+   шаблоны и варианты сверху, счётчик, аудит и экспорт снизу */
+.view--show.is-audit .canvas__frame { bottom: 44px; }
+.view--show.is-audit .show-bar { flex-wrap: wrap; height: auto; row-gap: 4px; }
+.view--show.is-audit .show-bar::after { content: ""; flex-basis: 100%; order: 4; height: 0; }
+.view--show.is-audit .show-bar__count { order: 5; margin-left: 0; }
+.view--show.is-audit .chip--audit { order: 6; }
+.view--show.is-audit .show-bar__export { order: 7; margin-left: auto; }
+.view--show.is-audit .show-bar__tabs .chip { max-width: 64px; }
+.view--show.is-audit .show-bar__tabs { flex: 1 1 0; min-width: 0; }
+.view--show.is-audit .show-bar__tabs .chip { flex: 1 1 0; min-width: 0; max-width: none; padding: 0 5px; }
+.audit__msg { font-weight: 400; }
+.audit__meta b, .audit__title { font-weight: 700; }
+.audit__tag { font-weight: 500; }
+/* находка про весь слайд (без рамки) — обводим слайд целиком */
+.canvas__slide.is-flag::after {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border-radius: 4px;
+  border: 1.5px solid var(--orange);
+  box-shadow: 0 0 18px rgba(221,94,17,.35);
+  pointer-events: none;
+  animation: markPulse 1.4s ease-in-out infinite;
+}
+.audit__note, .audit__empty, .audit__fix1 { font-weight: 400; }

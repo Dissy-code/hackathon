@@ -48,7 +48,7 @@ def pdf_to_png(pdf: Path, out_dir: Path, dpi: int = 60, prefix: str = "slide") -
     return out
 
 
-def render_deck(pptx: Path, out_dir: Path, dpi: int = 60) -> tuple[Path, list[Path]]:
-    """PDF рядом с колодой + PNG превью слайдов в out_dir/preview."""
+def render_deck(pptx: Path, out_dir: Path, dpi: int = 80) -> tuple[Path, list[Path]]:
+    """PDF рядом с колодой + PNG превью слайдов в out_dir/preview (80 dpi: читаемо и для смыслового аудита)."""
     pdf = pptx_to_pdf(pptx, out_dir)
     return pdf, pdf_to_png(pdf, out_dir / "preview", dpi=dpi)

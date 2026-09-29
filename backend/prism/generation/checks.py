@@ -14,7 +14,8 @@ from prism.planning.schemas import Item, SlideContent, SlideKind
 ITEMS = {
     SlideKind.agenda: (3, 6), SlideKind.cards: (2, 6), SlideKind.two_column: (2, 2),
     SlideKind.comparison: (2, 4), SlideKind.bullets: (2, 6), SlideKind.process: (3, 6),
-    SlideKind.timeline: (3, 6), SlideKind.kpi: (2, 4), SlideKind.team: (2, 8),
+    SlideKind.timeline: (3, 6), SlideKind.kpi: (1, 4),   # одно крупное число — законный слайд-«герой»
+    SlideKind.team: (2, 8),
 }
 MAX_HEADING_WORDS = 5
 MAX_TEXT_WORDS = 18
@@ -52,6 +53,9 @@ def normalize(c: SlideContent) -> SlideContent:
                 rest = m.group("rest").strip()
                 it = Item(heading=None, value=m.group("num").strip(),
                           text=f"{it.heading} {rest}".strip() if it.heading else rest)
+        key = (it.value or "", (it.heading or "").lower(), (it.text or "").lower())
+        if any(key == ((o.value or ""), (o.heading or "").lower(), (o.text or "").lower()) for o in items):
+            continue                        # модель иногда повторяет пункт дважды — «70%» и снова «70%»
         items.append(it)
     return c.model_copy(update={"items": items})
 
@@ -60,9 +64,21 @@ def _words(text: str | None) -> int:
     return len(text.split()) if text else 0
 
 
+# модель иногда пишет в поле собственные пометки: «(8 слов: … — 7 слов. Хорошо.)»
+_SELF_TALK = re.compile(r"\(\s*\d+\s*слов|\d+\s*слов[аo]?\s*[.)]|хорошо\.\)|\b(TODO|word count)\b", re.IGNORECASE)
+
+
+def _texts(c: SlideContent) -> list[str]:
+    out = [c.title, c.subtitle or "", c.quote or "", c.author or ""]
+    out += [x for i in c.items for x in (i.heading, i.text, i.value) if x]
+    return out
+
+
 def content_problems(c: SlideContent) -> list[str]:
     """Замечания по-русски, пригодные, чтобы вернуть их модели как есть."""
     p: list[str] = []
+    if any(_SELF_TALK.search(t) for t in _texts(c)):
+        p.append("в тексте остались служебные пометки (подсчёт слов и т. п.) — убери их, оставь только текст слайда")
     if _words(c.title) > MAX_TITLE_WORDS:
         p.append(f"заголовок длиннее {MAX_TITLE_WORDS} слов — сократи")
     need = ITEMS.get(c.kind)
@@ -103,12 +119,20 @@ def degrade(c: SlideContent) -> SlideContent:
     kind = c.kind
     if kind == SlideKind.chart and (c.chart is None or not c.chart.series):
         kind = SlideKind.table if c.table else (SlideKind.cards if len(c.items) >= 2 else SlideKind.section)
-    elif kind == SlideKind.table and (c.table is None or not c.table.rows) or kind == SlideKind.kpi and sum(1 for i in c.items if i.value) < 2:
+    elif kind == SlideKind.table and (c.table is None or not c.table.rows) or kind == SlideKind.kpi and not any(i.value for i in c.items):
         kind = SlideKind.cards if len(c.items) >= 2 else SlideKind.section
     elif kind == SlideKind.timeline and sum(1 for i in c.items if i.value) < 2:
         kind = SlideKind.process if len(c.items) >= 3 else (SlideKind.bullets if c.items else SlideKind.section)
-    elif kind in (SlideKind.team, SlideKind.cards, SlideKind.process, SlideKind.agenda) and len(c.items) < 2 or kind == SlideKind.quote and not c.quote:
-        kind = SlideKind.section
+    elif kind in (SlideKind.team, SlideKind.cards, SlideKind.process, SlideKind.agenda, SlideKind.bullets,
+                  SlideKind.two_column, SlideKind.comparison) and len(c.items) < 2 \
+            or kind == SlideKind.quote and not c.quote:
+        kind = SlideKind.section            # слайд-список без пунктов — пустой образец; честнее тезис-разделитель
+    # служебные пометки модели, если исправление их не убрало, — вырезаем скобки с ними
+    def clean(t: str | None) -> str | None:
+        return re.sub(r"\s*\([^()]*(?:слов|Хорошо)[^()]*\)", "", t).strip() if t else t
+    c = c.model_copy(update={"title": clean(c.title), "subtitle": clean(c.subtitle),
+                             "items": [i.model_copy(update={"heading": clean(i.heading), "text": clean(i.text)})
+                                       for i in c.items]})
     # пустые пункты не нужны ни одному типу
     items = [i for i in c.items if i.heading or i.text or i.value]
     return c.model_copy(update={"kind": kind, "items": items})

@@ -31,7 +31,7 @@ from prism.planning.schemas import SlideKind
 
 SPECS_DIR = BACKEND_DIR / "data" / "specs"
 # повышать при изменении парсера: кеш со старой версией разбора пересобирается автоматически
-SPEC_VERSION = 12
+SPEC_VERSION = 16
 
 
 class Asset(BaseModel):

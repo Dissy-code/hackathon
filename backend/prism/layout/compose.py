@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from pptx import Presentation
+from pptx.oxml.ns import qn
 
 from prism.color import delta_e, relative_luminance
 from prism.layout import fit
@@ -42,6 +43,18 @@ FALLBACK: dict[SlideKind, list[SlideKind]] = {
     SlideKind.table: [SlideKind.bullets, SlideKind.two_column, SlideKind.cards],
 }
 _TEXTUAL = {SlotKind.heading, SlotKind.text, SlotKind.caption, SlotKind.number, SlotKind.title}
+# «[Что изменится]» — поле, которое автор шаблона просит заполнить; текст без скобок рядом — постоянная подпись
+_FILL_IN = re.compile(r"\[[^\]]+\]")
+
+
+def _fill_in_slots(textual: list[Slot]) -> list[Slot]:
+    """Если часть полей карточки — «[заглушки]», а часть — подписи («Результат декабря»), содержимое идёт
+    только в заглушки: подписи шаблона — его текст, не наш, и без содержимого они убираются."""
+    words = [s for s in textual if s.kind != SlotKind.number]
+    fill_in = [s for s in words if _FILL_IN.fullmatch(s.sample.strip())]
+    if not fill_in or len(fill_in) == len(words):
+        return textual
+    return [s for s in textual if s.kind == SlotKind.number or s in fill_in]
 
 
 @dataclass
@@ -80,12 +93,44 @@ def _overflow_penalty(p: Pattern, content: SlideContent) -> float:
     return min(4.0, max(0.0, ratio - 1.1) * 2.5)
 
 
+def _unfilled_penalty(p: Pattern, content: SlideContent, slide_h: int) -> float:
+    """Одиночные поля, которым нечего дать: «[Главная цель года]» над деревом, «Главное ограничение» под
+    сравнением. Они уйдут, а схема вокруг (линии, плашки) останется висеть — такой образец хуже."""
+    if not slide_h:
+        return 0.0
+    band = [s for s in p.slots if slide_h * 0.1 < s.bbox.y < slide_h * 0.86]
+    words = _fill_in_slots([s for s in band if s.kind in _TEXTUAL])
+    words = [s for s in words if s.kind != SlotKind.number]
+    heroes = [s for s in band if s.kind == SlotKind.number]
+    fillable = (1 if content.subtitle or content.quote else 0) + (1 if content.author else 0)
+    fillable += 1 if content.items and not p.groups else 0
+    fillable += min(len(heroes), sum(1 for i in content.items if i.value))      # подписи под крупными числами
+    penalty = 0.0
+    for s in sorted(words, key=lambda s: (s.bbox.y, s.bbox.x))[fillable:]:
+        cx, cy = s.bbox.x + s.bbox.w / 2, s.bbox.y + s.bbox.h / 2
+        on_plate = any(d.bbox.x <= cx <= d.bbox.right and d.bbox.y <= cy <= d.bbox.bottom and not d.bleed
+                       and d.bbox.h < slide_h * 0.5 and d.bbox.area < 4 * s.bbox.area for d in p.decor_boxes)
+        penalty += 2.0 if on_plate else 0.8
+    return penalty
+
+
+def _has_text(g: RepeatGroup) -> bool:
+    return any(sl.kind in _TEXTUAL and sl.kind != SlotKind.number for it in g.items for sl in it)
+
+
+def _ordered_groups(p: Pattern) -> list[RepeatGroup]:
+    """Сначала группы, куда встаёт текст; ряд иконок или номеров без текста — после них: он лишь
+    повторяет число заполненных карточек. Иначе пункты уйдут в иконки и тексты потеряются."""
+    return sorted(p.groups, key=lambda g: not _has_text(g))
+
+
 def _main_group(p: Pattern) -> RepeatGroup | None:
-    return p.groups[0] if p.groups else None
+    groups = _ordered_groups(p)
+    return groups[0] if groups else None
 
 
 def _score(ps: PatternSpec, content: SlideContent, used: Counter, exact_kind: bool,
-           slide_area: int = 0) -> float:
+           slide_area: int = 0, slide_h: int = 0) -> float:
     p = ps.pattern
     n = len(content.items)
     g = _main_group(p)
@@ -139,7 +184,7 @@ def _score(ps: PatternSpec, content: SlideContent, used: Counter, exact_kind: bo
             regions = [s.bbox.area for s in p.slots if s.kind in (SlotKind.image, SlotKind.text, SlotKind.caption)]
             regions += [pic.bbox.area for pic in p.pictures if not pic.from_layout and not pic.bleed]
             if p.groups:
-                bs = p.groups[0].item_bboxes
+                bs = _main_group(p).item_bboxes
                 regions.append((max(b.right for b in bs) - min(b.x for b in bs))
                                * (max(b.bottom for b in bs) - min(b.y for b in bs)))
             if max(regions, default=0) < 0.25 * slide_area:
@@ -149,7 +194,11 @@ def _score(ps: PatternSpec, content: SlideContent, used: Counter, exact_kind: bo
         score += 2.0
     if not content.image and has_image_slot:
         score += 1.5                                         # фото-заглушку придётся убрать
+    if not content.image and slide_area and any(
+            pic.bbox.area > 0.15 * slide_area for pic in p.pictures if not pic.from_layout and not pic.bleed):
+        score += 2.5                                         # крупная картинка-пример (скриншот, фото) — чужой контент
     score += _overflow_penalty(p, content)
+    score += _unfilled_penalty(p, content, slide_h)
     return score + 1.2 * used[p.id]                          # разнообразие: не повторять один образец подряд
 
 
@@ -168,7 +217,7 @@ def choose_pattern(spec: TemplateSpec, content: SlideContent, used: Counter,
             tier = 1.0 + fallback.index(ps.kind)
         else:
             tier = 10.0
-        score = tier + _score(ps, content, used, exact_kind=True, slide_area=slide_area)
+        score = tier + _score(ps, content, used, exact_kind=True, slide_area=slide_area, slide_h=spec.tokens.slide_h)
         return score + _variant_bias(ps, variant, avoid)
 
     return min(spec.patterns, key=total)
@@ -180,7 +229,8 @@ def choose_with_score(spec: TemplateSpec, content: SlideContent, used: Counter, 
     ps = choose_pattern(spec, content, used, variant, avoid)
     fallback = FALLBACK.get(content.kind, [])
     tier = 0.0 if ps.kind == content.kind else (1.0 + fallback.index(ps.kind) if ps.kind in fallback else 10.0)
-    return ps, tier + _score(ps, content, used, exact_kind=True, slide_area=spec.tokens.slide_w * spec.tokens.slide_h)
+    return ps, tier + _score(ps, content, used, exact_kind=True, slide_area=spec.tokens.slide_w * spec.tokens.slide_h,
+                            slide_h=spec.tokens.slide_h)
 
 
 # ── варианты вёрстки ───────────────────────────────────────────────────────
@@ -270,7 +320,7 @@ def _assign_item(slots: list[Slot], item: Item, index: int) -> dict[int, list[st
                 return value
         return None
 
-    textual = [s for s in slots if s.kind in _TEXTUAL]
+    textual = _fill_in_slots([s for s in slots if s.kind in _TEXTUAL])
     for s in textual:                                    # 1. числа
         if s.kind == SlotKind.number:
             v = take("value")
@@ -295,6 +345,26 @@ def _assign_item(slots: list[Slot], item: Item, index: int) -> dict[int, list[st
             continue
         v = take("text", "heading", "value")      # число без своего слота не должно теряться
         out[s.shape_id] = [v] if v else []
+    return out
+
+
+def _widen_into_empty(slots: list[Slot], filled: set[int]) -> dict[int, BBox]:
+    """Строка «Риск | Сигнал | Действие», а у пункта только заголовок и пояснение: третья колонка пустеет,
+    а пояснение ютится во второй. Заполненный слот забирает пустые соседние справа в той же строке."""
+    textual = [s for s in slots if s.kind in _TEXTUAL and s.kind != SlotKind.number]
+    out = {}
+    for s in textual:
+        if s.shape_id not in filled:
+            continue
+        row = sorted((o for o in textual if o is not s and o.bbox.x >= s.bbox.right - s.bbox.w * 0.1
+                      and o.bbox.y < s.bbox.bottom and o.bbox.bottom > s.bbox.y), key=lambda o: o.bbox.x)
+        right = s.bbox.right
+        for o in row:
+            if o.shape_id in filled:
+                break
+            right = o.bbox.right
+        if right > s.bbox.right:
+            out[s.shape_id] = s.bbox.model_copy(update={"w": right - s.bbox.x})
     return out
 
 
@@ -330,13 +400,15 @@ class _Composer:
     # ── текстовые слоты ──
 
     def _fill(self, slide, slot: Slot, texts: list[str], report: SlideReport | None = None,
-              limit_bottom: int | None = None) -> bool:
+              limit_bottom: int | None = None, resize: bool = False) -> bool:
         el = ops.find_shape(slide, slot.shape_id)
         if el is None:
             return False
         if not ops.set_paragraphs(el, texts):
             ops.remove_shape(slide, slot.shape_id)
             return False
+        if resize:
+            ops.set_box(el, slot.bbox)
         self._fit(el, slot, report, limit_bottom)
         return True
 
@@ -381,8 +453,20 @@ class _Composer:
             return
         t = self.spec.tokens
         width = slot.bbox.w
+        xfrm = ops.shape_xfrm(el)
+        off, ext = (xfrm.find(qn("a:off")), xfrm.find(qn("a:ext"))) if xfrm is not None else (None, None)
+        if off is not None and ext is not None and el.getparent().tag == qn("p:spTree") \
+                and int(off.get("x")) + int(ext.get("cx")) > t.slide_w + t.slide_w // 100:
+            # рамка образца уходила за край (короткому образцу это не мешало) — наш текст держим в слайде
+            right = min(slot.bbox.right, t.slide_w - t.margins.right)
+            slot = slot.model_copy(update={"bbox": slot.bbox.model_copy(update={"w": right - slot.bbox.x})})
+            ops.set_box(el, slot.bbox)
         if ops.no_wrap(el):                  # без переноса строка тянется до правого поля
             width = t.slide_w - t.margins.right - slot.bbox.x
+        elif slot.kind == SlotKind.number and limit_bottom is None and ops.alignment(el) == "l":
+            # «Q4 2026» вместо образца «01»: число не переносится, а растёт вправо до соседа
+            width = self._room_right(slot)
+            ops.set_box(el, BBox(x=slot.bbox.x, y=slot.bbox.y, w=width, h=slot.bbox.h))
         elif limit_bottom is None:           # одиночные блоки и заголовок — с учётом соседей справа
             width = self._free_width(slot)
             if width < slot.bbox.w or slot.kind == SlotKind.title:
@@ -560,6 +644,9 @@ class _Composer:
                 # тонкая линия-разделитель: относится к тексту сразу под/над ней
                 pad = t.slide_h // 12
                 b = BBox(x=b.x, y=b.y - pad, w=b.w, h=b.h + 2 * pad)
+            elif b.w < t.slide_w // 100:
+                # вертикальная полоса-маркер слева от строки: относится к тексту справа от неё
+                b = BBox(x=b.x, y=b.y, w=b.w + t.slide_w // 6, h=b.h)
             if any(inside(g, b) for g in gone) and not any(inside(a, b) for a in alive):
                 ops.remove_shape(slide, box.shape_id)
 
@@ -579,14 +666,63 @@ class _Composer:
                 else:
                     for s in item_slots:
                         ops.remove_shape(slide, s.shape_id)
+                    self._drop_inside(slide, g.item_bboxes[i])
                 continue
             texts = _assign_item(item_slots, items[i], start + i)
             limit = g.item_bboxes[i].bottom               # текст карточки не должен вылезать за карточку
+            wider = _widen_into_empty(item_slots, {sid for sid, t in texts.items() if any(t)})
+            for s in item_slots:
+                # «Q4 2026» в слоте под «01»: число растёт вправо до края карточки, а не переносится
+                value = (texts.get(s.shape_id) or [""])[0] or ""
+                el = ops.find_shape(slide, s.shape_id) if s.kind == SlotKind.number else None
+                if el is not None and len(value) > len(s.sample.strip()) + 1 and ops.alignment(el) == "l":
+                    t = self.spec.tokens            # рамки карточек в шаблоне бывают шире слайда
+                    right = min(max(g.item_bboxes[i].right, s.bbox.right), t.slide_w - t.margins.right)
+                    wider[s.shape_id] = s.bbox.model_copy(update={"w": right - s.bbox.x})
             for s in item_slots:
                 if s.kind in _TEXTUAL:
-                    self._fill(slide, s, texts.get(s.shape_id, []), report, limit_bottom=limit)
+                    slot = s.model_copy(update={"bbox": wider[s.shape_id]}) if s.shape_id in wider else s
+                    self._fill(slide, slot, texts.get(s.shape_id, []), report, limit_bottom=limit,
+                               resize=s.shape_id in wider)
                 elif s.kind == SlotKind.image:
                     ops.remove_shape(slide, s.shape_id)   # фото-заглушки в карточках без своих фото убираем
+
+    def _column_heroes(self, singles: list[Slot], g: RepeatGroup | None) -> list[Slot]:
+        """Крупные одиночные числа, стоящие ровно по одному над каждой карточкой группы (по порядку карточек)."""
+        if g is None or g.count < 2:
+            return []
+        h = self.spec.tokens.slide_h
+        nums = [s for s in singles if s.kind == SlotKind.number and h * 0.1 < s.bbox.y < h * 0.86]
+        out = []
+        for ib in g.item_bboxes:
+            above = [n for n in nums if n.bbox.x < ib.right and n.bbox.right > ib.x
+                     and n.bbox.bottom <= ib.y + ib.h * 0.2 and ib.y - n.bbox.bottom < h * 0.2]
+            if len(above) != 1:
+                return []
+            out.append(above[0])
+        return out if len({s.shape_id for s in out}) == len(out) else []
+
+    def _room_right(self, slot: Slot) -> int:
+        """Сколько места у одиночного блока до ближайшей фигуры справа (или до правого поля)."""
+        p, t = self.pattern, self.spec.tokens
+        b = slot.bbox
+        others = [s.bbox for s in p.slots if s.shape_id != slot.shape_id]
+        others += [ib for g in p.groups for ib in g.item_bboxes] + [d.bbox for d in p.decor_boxes]
+        edges = [o.x for o in others if o.y < b.bottom and o.bottom > b.y and o.x >= b.right - b.w * 0.05]
+        right = min(edges, default=t.slide_w - t.margins.right) - t.slide_w // 100
+        return max(right - b.x, b.w)
+
+    def _drop_inside(self, slide, box: BBox) -> None:
+        """Убранная карточка: иконки, картинки и мелкий декор, что стояли на ней, тоже уходят."""
+        p = self.pattern
+        t = self.spec.tokens
+        for d in p.decor_boxes + [pic for pic in p.pictures if not pic.from_layout]:
+            b = d.bbox
+            if d.service or d.bleed or b.area > box.area * 1.2 or b.w > 0.9 * t.slide_w:
+                continue
+            cx, cy = b.x + b.w / 2, b.y + b.h / 2
+            if box.x <= cx <= box.right and box.y <= cy <= box.bottom:
+                ops.remove_shape(slide, d.shape_id)
 
     # ── области для графика/таблицы без готового слота ──
 
@@ -596,7 +732,7 @@ class _Composer:
         t = self.spec.tokens
         images = [s.bbox for s in p.slots if s.kind == SlotKind.image]
         texts = [s.bbox for s in p.slots if s.kind in (SlotKind.text, SlotKind.caption)]
-        groups = [b for b in (p.groups[0].item_bboxes if p.groups else [])]
+        groups = list(_main_group(p).item_bboxes) if p.groups else []
         if images:
             box = max(images, key=lambda b: b.area)
         elif groups:
@@ -644,6 +780,15 @@ class _Composer:
         singles = [s for s in p.slots if s.kind in _TEXTUAL and s.shape_id not in chrome]
         taken: set[int] = set()
         heroes = sorted((s for s in singles if s.kind == SlotKind.number), key=lambda s: -s.bbox.area)
+        columns = self._column_heroes(singles, _main_group(p))
+        if columns:
+            # «01 02 03» над колонками — шапки колонок: число/дата пункта сверху, остальное — в колонку под ним
+            heroes = []
+            for i, hero in enumerate(columns[: len(items)]):
+                it = items[i]
+                self._fill(slide, hero, [_nbsp(it.value) if it.value else _numbering(hero.sample, i + 1)], report)
+                taken.add(hero.shape_id)
+                items[i] = it.model_copy(update={"value": None})
         while heroes and items and items[0].value:
             hero, item = heroes.pop(0), items.pop(0)
             self._fill(slide, hero, [_nbsp(item.value)], report)
@@ -661,10 +806,11 @@ class _Composer:
         placed_items = bool(p.groups) and bool(items)
         rest, start = items, 1
         placed = 0
-        for gi, g in enumerate(p.groups):
-            only_numbers = all(sl.kind == SlotKind.number for it in g.items for sl in it)
-            if gi and only_numbers and placed:
-                # отдельная группа номеров (кружки «1…4» цикла) — нумеруем, пунктов она не забирает
+        for gi, g in enumerate(_ordered_groups(p)):
+            decor_only = not _has_text(g)
+            if gi and decor_only and placed:
+                # отдельная группа номеров или иконок (кружки «1…4», значки над карточками) — повторяет
+                # заполненные карточки, пунктов не забирает
                 self._fill_group(slide, g, [Item() for _ in range(min(placed, g.count))], 1, report)
                 continue
             chunk, rest = rest[: g.count], rest[g.count:]
@@ -791,8 +937,13 @@ def _short_title(title: str, limit: int = 32) -> str:
     head = re.split(r"[:—–.]", title, maxsplit=1)[0].strip()
     if len(head) <= limit:
         return head
-    cut = head[:limit].rsplit(" ", 1)[0]
-    return cut or head[:limit]
+    named = re.search(r"(?:\S+\s)?«[^»]{1,24}»", head)            # «Приложение «Зерно»» — имя проекта
+    if named and len(named.group(0)) <= limit:
+        return named.group(0)
+    words = head[:limit].rsplit(" ", 1)[0].split()
+    while len(words) > 1 and (len(words[-1]) <= 3 or words[-1][-1] in ",;"):
+        words.pop()                                               # не обрываем на «за», «и», «в»
+    return " ".join(words) or head[:limit]
 
 
 def compose_deck(template_pptx: str | Path, spec: TemplateSpec, contents: list[SlideContent],
@@ -806,6 +957,7 @@ def compose_deck(template_pptx: str | Path, spec: TemplateSpec, contents: list[S
     originals = list(prs.slides)
     footer = _short_title(contents[0].title) if contents else ""
     composer = _Composer(spec, images or {}, footer)
+    synth.use_scale(spec.tokens)
     canvases = {False: synth.pick_canvas(spec), True: synth.pick_canvas(spec, dark=True)}
     roles = synth.roles(spec.tokens)
     used: Counter = Counter()

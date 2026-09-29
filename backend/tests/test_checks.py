@@ -51,3 +51,22 @@ def test_long_value_is_split_into_number_and_caption():
     assert (items[1].value, items[1].text) == ("1,2 млрд ₽", "выручка за год")
     assert items[2].value == "38%"
     assert content_problems(normalize(c)) == []
+
+
+def test_model_self_talk_is_flagged_and_cut():
+    from prism.generation.checks import content_problems, degrade
+    from prism.planning.schemas import Item, SlideContent, SlideKind
+
+    c = SlideContent(kind=SlideKind.cards, title="Капитализация", items=[
+        Item(heading="Рынок", text="265,3 млрд CHF. (8 слов: Капитализация на 13 ноября — 7 слов. Хорошо.)"),
+        Item(heading="США", text="Основной рынок сбыта")])
+    assert any("служебные" in p for p in content_problems(c))
+    assert degrade(c).items[0].text == "265,3 млрд CHF."
+
+
+def test_single_hero_number_is_a_valid_kpi_slide():
+    from prism.generation.checks import content_problems
+    from prism.planning.schemas import Item, SlideContent, SlideKind
+
+    c = SlideContent(kind=SlideKind.kpi, title="Выручка 89,5 млрд CHF", items=[Item(value="89,5 млрд", text="выручка 2025")])
+    assert content_problems(c) == []

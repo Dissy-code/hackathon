@@ -1,0 +1,15 @@
+.git
+**/.env
+**/*.env
+**/venv
+**/.venv
+**/__pycache__
+**/.pytest_cache
+**/.ruff_cache
+**/*.egg-info
+backend/data
+backend/.cache
+**/node_modules
+frontend/app
+frontend/react/dist
+**/*.psd

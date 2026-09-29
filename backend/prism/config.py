@@ -81,11 +81,23 @@ class ResolvedRole(BaseModel):
     max_tokens: int
 
 
+class ResearchConfig(BaseModel):
+    """Поиск в интернете для коротких брифов (узел research графа, инструменты MCP-сервера web)."""
+
+    min_brief_words: int = 60      # бриф короче и почти без чисел — модель ищет материалы сама
+    max_queries: int = 3
+    max_pages: int = 4
+    page_chars: int = 6000         # сколько текста страницы отдавать модели
+    budget_s: float = 60           # весь поиск; не успели — генерация идёт по брифу
+
+
 class AppConfig(BaseModel):
     llm: LLMConfig
     role_defaults: RoleParams = Field(default_factory=RoleParams)
     roles: dict[str, RoleParams]
     skills: dict[str, int] = Field(default_factory=dict)
+    mcp: dict[str, str] = Field(default_factory=dict)       # имя сервера -> URL (streamable HTTP); пусто — выкл.
+    research: ResearchConfig = Field(default_factory=ResearchConfig)
 
     def resolve_role(self, role: str) -> ResolvedRole:
         if role not in self.roles:

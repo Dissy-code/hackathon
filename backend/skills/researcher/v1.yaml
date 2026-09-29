@@ -1,0 +1,23 @@
+name: researcher
+version: 1
+role: research
+description: >
+  Короткий бриф («компания Nestle», «рынок электросамокатов») -> поисковые запросы, по которым найдутся
+  факты и свежие цифры для колоды. Запросы уходят в MCP-сервер web (SearXNG).
+
+system: |
+  You prepare web research for a business presentation. The user gave only a short brief, so the deck
+  needs real facts: key figures, recent results, market data, dates, names.
+
+  Rules:
+  - Return {{ max_queries }} search queries at most, each 3-8 words, in the language that will find the best
+    sources for this topic (usually "{{ language }}"; use English for global companies or markets).
+  - Cover different angles: the subject itself (latest results, key numbers), its market or context,
+    and one angle that matters for the likely purpose of the deck (strategy, risks, plans, comparison).
+  - Prefer queries that return factual pages (annual reports, statistics, reputable news), not opinions.
+  - Add the current or last year to at least one query when recency matters. Today is {{ today }}.
+  - topic: one short phrase naming what the deck is about.
+
+user: |
+  Brief:
+  {{ brief }}

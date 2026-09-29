@@ -1,0 +1,83 @@
+# ЦДС — цифровой дизайнер презентаций.
+#
+#   cp backend/.env.example backend/.env   # провайдер модели: LLM_BASE_URL, LLM_API_KEY, LLM_MODEL
+#   docker compose up -d --build
+#   open http://localhost:8000
+#
+# Сервисы:
+#   backend   — API (FastAPI + LangGraph), фронтенд, рендер LibreOffice;             порт 8000 наружу
+#   mcp-web   — MCP-сервер поиска: web_search через SearXNG, fetch_page;          только внутри сети
+#   mcp-pptx  — MCP-сервер pptx: токены шаблона, осмотр, аудит, рендер, правка;   только внутри сети
+#   searxng   — self-hosted метапоисковик (AGPL-3.0), без внешнего порта
+name: prism
+
+x-app: &app
+  build:
+    context: .
+    dockerfile: backend/Dockerfile
+  image: prism-backend:latest
+  restart: unless-stopped
+
+services:
+  backend:
+    <<: *app
+    env_file:
+      - path: backend/.env
+        required: false
+    environment:
+      MCP_WEB_URL: http://mcp-web:8001/mcp
+      MCP_PPTX_URL: http://mcp-pptx:8002/mcp
+    ports:
+      - "${PRISM_PORT:-8000}:8000"
+    volumes:
+      - prism-data:/app/backend/data
+    depends_on:
+      mcp-web:
+        condition: service_started
+      mcp-pptx:
+        condition: service_started
+
+  mcp-web:
+    <<: *app
+    command: ["python", "-m", "prism.mcp.web_server"]
+    environment:
+      MCP_HOST: 0.0.0.0
+      MCP_PORT: "8001"
+      SEARXNG_URL: http://searxng:8080
+    healthcheck:
+      disable: true
+    depends_on:
+      searxng:
+        condition: service_healthy
+
+  mcp-pptx:
+    <<: *app
+    command: ["python", "-m", "prism.mcp.pptx_server"]
+    environment:
+      MCP_HOST: 0.0.0.0
+      MCP_PORT: "8002"
+      PRISM_DATA_DIR: /app/backend/data
+    healthcheck:
+      disable: true
+    volumes:
+      - prism-data:/app/backend/data     # те же шаблоны и колоды, что у backend
+
+  searxng:
+    image: docker.io/searxng/searxng:latest
+    restart: unless-stopped
+    environment:
+      SEARXNG_BASE_URL: http://searxng:8080/
+      SEARXNG_SECRET: ${SEARXNG_SECRET:-prism-local-change-me}
+    volumes:
+      - ./deploy/searxng/settings.yml:/etc/searxng/settings.yml:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/healthz || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    cap_drop: [ALL]
+    cap_add: [CHOWN, SETGID, SETUID]
+
+volumes:
+  prism-data:

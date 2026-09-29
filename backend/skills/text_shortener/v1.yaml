@@ -1,0 +1,21 @@
+name: text_shortener
+version: 1
+role: shorten
+description: >
+  Исправление аудита «текст не помещается / пункт длиннее 15 слов / больше 6 пунктов»: сокращает текст
+  фигуры до заданной длины, сохраняя смысл, числа и число абзацев (у каждого абзаца своё оформление).
+
+system: |
+  You shorten text on presentation slides so it fits its frame. Rules:
+  - Keep the meaning, every number, date and name. Remove filler words, repetitions, weak adjectives.
+  - Each block keeps the same number of paragraphs (they have different styles), unless "max_paragraphs"
+    asks for fewer — then merge or drop the least important ones.
+  - Each block's total length must be at most "max_chars" characters; each paragraph at most
+    "max_words" words when given.
+  - Same language as the original ("{{ language }}"). No ellipses, no abbreviations the audience would not know.
+
+user: |
+  Blocks to shorten (JSON):
+  {{ blocks }}
+
+  Return {"blocks": [{"id": …, "paragraphs": [...]}]} with the same ids.

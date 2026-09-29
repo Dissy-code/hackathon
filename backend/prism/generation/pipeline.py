@@ -2,9 +2,12 @@
 
 Граф LangGraph (узлы — шаги с понятными границами, состояние — между ними):
 
-    plan ──> write ──> compose ──> render
+    research ──> plan ──> write ──> compose ──> render ──> audit
 
-Модель работает только в plan и write; compose и render детерминированы. Прогресс идёт через
+research — поиск материалов через MCP-сервер web, только для короткого брифа без цифр (иначе пропуск).
+audit — детерминированный аудит каждой колоды (prism/audit); смысловой аудит моделью и исправления
+пользователь запускает из панели аудита (app/audit.py).
+Модель работает в research, plan и write; compose, render и audit детерминированы. Прогресс идёт через
 поток custom-событий: {"stage", "message", "progress"} — их ретранслирует SSE в интерфейс.
 """
 
@@ -19,14 +22,18 @@ from pathlib import Path
 from typing import Any, TypedDict
 
 import yaml
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.config import get_stream_writer
 from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel, Field
 
+from prism.audit import service as audit_service
 from prism.config import BACKEND_DIR
+from prism.export.html import export_html
 from prism.generation.checks import content_problems, degrade, normalize
+from prism.generation.research import needs_research
+from prism.generation.research import research as run_research
 from prism.layout.compose import SYNTH_KINDS, compose_deck
 from prism.llm.client import LLMFactory
 from prism.llm.structured import StructuredOutputError, ainvoke_structured
@@ -62,6 +69,8 @@ class GenState(TypedDict, total=False):
     language: str
     templates: list[TemplateRef]
     images: list[ImageRef]
+    materials: list[dict]            # факты из интернета: {"id": "m1", "text": "… [источник]"}
+    sources: list[dict]              # страницы, откуда факты: {"id", "title", "url"}
     outlines: dict[str, dict]        # вариант -> план колоды
     contents: dict[str, list[dict]]  # вариант -> содержимое слайдов
     decks: list[dict]
@@ -88,6 +97,25 @@ def detect_language(text: str) -> str:
 def _deps(config: RunnableConfig) -> tuple[LLMFactory, SkillRegistry]:
     c = config["configurable"]
     return c["llm"], c["skills"]
+
+
+async def research(state: GenState, config: RunnableConfig) -> dict:
+    """Короткий бриф без цифр — ищем факты в интернете (MCP web); иначе узел ничего не делает."""
+    c = config["configurable"]
+    hub, cfg = c.get("mcp"), c.get("research")
+    if hub is None or cfg is None or not needs_research(state["brief"], cfg):
+        return {}
+    if not hub.has("web"):
+        note = "бриф короткий, но поиск в интернете не настроен (MCP_WEB_URL) — колода по брифу"
+        return {"warnings": [*state.get("warnings", []), note]}
+    llm, skills = _deps(config)
+    found = await run_research(state["brief"], state["language"], hub, llm, skills, cfg,
+                               lambda msg, p: _emit("research", msg, p))
+    manifest = dict(state.get("manifest", {}))
+    manifest["skills"] = [*manifest.get("skills", []), *found["skills"]]
+    _emit("research", f"материалы: {len(found['materials'])} фактов из {len(found['sources'])} источников", 0.1)
+    return {"materials": found["materials"], "sources": found["sources"], "manifest": manifest,
+            "warnings": [*state.get("warnings", []), *found["warnings"]]}
 
 
 def _emit(stage: str, message: str, progress: float, **extra: Any) -> None:
@@ -120,18 +148,33 @@ async def plan(state: GenState, config: RunnableConfig) -> dict:
             audience="determine from the brief",
             n_slides=f"exactly {n}" if n else f"{v['slides']}, or as many as the brief explicitly asks for",
             language=state["language"], kinds=sorted(k.value for k in kinds), brief=state["brief"],
-            materials=[], variant=v["planner"],
+            materials=state.get("materials", []), variant=v["planner"],
             images=[{"id": i["id"], "name": i["name"]} for i in state.get("images", [])],
         )
-        return key, await ainvoke_structured(model, msgs, DeckOutline, retries=1)
+        outline = await ainvoke_structured(model, msgs, DeckOutline, retries=1)
+        lo = n or int(re.match(r"\d+", str(v["slides"])).group())
+        if len(outline.slides) < lo:
+            # мало материала — модель сжимает план; ТЗ требует объём, поэтому одна попытка с замечанием
+            note = (f"В плане {len(outline.slides)} слайдов, а нужно не меньше {lo}. Раздели насыщенные слайды, "
+                    "добавь раскрывающие слайды по фактам из брифа и материалов (без выдуманных цифр). "
+                    "Верни план целиком тем же JSON.")
+            retry = msgs + [AIMessage(outline.model_dump_json()), HumanMessage(note)]
+            try:
+                longer = await ainvoke_structured(model, retry, DeckOutline, retries=1)
+                if len(longer.slides) > len(outline.slides):
+                    outline = longer
+            except StructuredOutputError:
+                pass
+        return key, outline
 
-    _emit("plan", "подбираем структуру колоды", 0.08)
+    _emit("plan", "подбираем структуру колоды", 0.12)
     outlines = dict(await asyncio.gather(*(one(k, v) for k, v in variants.items())))
     first = next(iter(outlines.values()))
     _emit("plan", f"план: {', '.join(str(len(o.slides)) for o in outlines.values())} слайдов по вариантам", 0.3,
           titles=[s.title for s in first.slides])
-    return {"outlines": {k: o.model_dump(mode="json") for k, o in outlines.items()},
-            "manifest": {"skills": [skill.manifest_entry()]}}
+    manifest = dict(state.get("manifest", {}))
+    manifest["skills"] = [*manifest.get("skills", []), skill.manifest_entry()]
+    return {"outlines": {k: o.model_dump(mode="json") for k, o in outlines.items()}, "manifest": manifest}
 
 
 async def _write_variant(outline: DeckOutline, style: str, state: GenState, skill, model, gate: asyncio.Semaphore,
@@ -143,7 +186,8 @@ async def _write_variant(outline: DeckOutline, style: str, state: GenState, skil
 
     def render(idx: list[int], extra: list[HumanMessage] | None = None):
         msgs = skill.render(
-            language=state["language"], brief=state["brief"], materials=[], storyline=outline.storyline,
+            language=state["language"], brief=state["brief"], materials=state.get("materials", []),
+            storyline=outline.storyline,
             first=idx[0] + 1, last=idx[-1] + 1, total=total, style=style, images=images,
             slides=[{"n": i + 1, **outline.slides[i].model_dump(mode="json")} for i in idx],
         )
@@ -275,10 +319,12 @@ async def render(state: GenState, config: RunnableConfig) -> dict:
             try:
                 pdf, pngs = await asyncio.to_thread(render_deck, pptx, pptx.parent)
                 result = {**v, "pdf": str(pdf), "previews": [str(p) for p in pngs]}
+                html = await asyncio.to_thread(export_html, pptx, pptx.with_suffix(".html"), state["brief"][:80])
+                result["html"] = str(html)
             except RenderError as e:
                 result = {**v, "pdf": None, "previews": [], "render_error": str(e)}
         done += 1
-        _emit("render", "наводим красоту", 0.82 + 0.18 * done / total)
+        _emit("render", "наводим красоту", 0.82 + 0.14 * done / total)
         return result
 
     # один общий пул на все колоды всех шаблонов, потом раскладываем результаты обратно по шаблонам
@@ -287,32 +333,62 @@ async def render(state: GenState, config: RunnableConfig) -> dict:
     decks = [{**d, "variants": []} for d in state["decks"]]
     for (di, _), result in zip(flat, rendered, strict=True):
         decks[di]["variants"].append(result)
-    _emit("render", "готово", 1.0)
+    _emit("render", "превью готовы", 0.96)
+    return {"decks": decks}
+
+
+async def audit(state: GenState, config: RunnableConfig) -> dict:
+    """Детерминированный аудит всех колод (параллельно, без модели) + контекст для смыслового аудита."""
+    out = Path(state["out_dir"])
+    context = {"brief": state["brief"], "language": state["language"], "materials": state.get("materials", []),
+               "templates": {t["id"]: {"name": t["name"], "pptx": t["pptx"], "spec": t["spec"]}
+                             for t in state["templates"]}}
+    (out / "context.json").write_text(json.dumps(context, ensure_ascii=False, indent=1), encoding="utf-8")
+    _emit("audit", "проверяем слайды", 0.97)
+
+    async def one(tid: str, v: dict) -> dict:
+        if not v.get("pdf"):
+            return v
+        result = await asyncio.to_thread(audit_service.run_deterministic, Path(v["pptx"]).parent, context, tid)
+        errors = sum(1 for i in result.issues if i.severity == "error")
+        return {**v, "audit": {"errors": errors, "warnings": len(result.issues) - errors}}
+
+    decks = []
+    for d in state["decks"]:
+        variants = await asyncio.gather(*(one(d["template_id"], v) for v in d["variants"]))
+        decks.append({**d, "variants": list(variants)})
+    _emit("audit", "готово", 1.0)
     return {"decks": decks}
 
 
 def build_graph():
     g = StateGraph(GenState)
+    g.add_node("research", research)
     g.add_node("plan", plan)
     g.add_node("write", write)
     g.add_node("compose", compose)
     g.add_node("render", render)
-    g.add_edge(START, "plan")
+    g.add_node("audit", audit)
+    g.add_edge(START, "research")
+    g.add_edge("research", "plan")
     g.add_edge("plan", "write")
     g.add_edge("write", "compose")
     g.add_edge("compose", "render")
-    g.add_edge("render", END)
+    g.add_edge("render", "audit")
+    g.add_edge("audit", END)
     return g.compile()
 
 
 GRAPH = build_graph()
 
 
-async def run(state: GenState, llm: LLMFactory, skills: SkillRegistry, on_event=None) -> GenState:
-    """Прогон графа; on_event(dict) получает события прогресса. Возвращает итоговое состояние."""
+async def run(state: GenState, llm: LLMFactory, skills: SkillRegistry, on_event=None, *,
+              mcp=None, research_cfg=None) -> GenState:
+    """Прогон графа; on_event(dict) получает события прогресса. Возвращает итоговое состояние.
+    mcp — McpHub (инструменты MCP-серверов), research_cfg — настройки поиска; без них поиск пропускается."""
     t0 = time.perf_counter()
     final: GenState = dict(state)  # type: ignore[assignment]
-    config = {"configurable": {"llm": llm, "skills": skills}}
+    config = {"configurable": {"llm": llm, "skills": skills, "mcp": mcp, "research": research_cfg}}
     async for mode, data in GRAPH.astream(state, config=config, stream_mode=["custom", "values"]):
         if mode == "custom" and on_event is not None:
             await on_event(data)

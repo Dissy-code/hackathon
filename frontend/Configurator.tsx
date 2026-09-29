@@ -21,9 +21,11 @@ import {
   type ChangeEvent, type CSSProperties, type PointerEvent as ReactPointerEvent,
 } from 'react';
 import './configurator.css';
+import AuditPanel from './AuditPanel.tsx';
 import {
-  TPL_ACCEPT, createDeck, describeTemplate, fetchMe, followDeck, logout, plural, uploadImage, uploadTemplate,
-  type DeckResult, type Me,
+  TPL_ACCEPT, applyAuditFixes, createDeck, describeTemplate, fetchAudit, fetchDeck, fetchMe, followDeck, logout, plural,
+  runContextualAudit, uploadImage, uploadTemplate,
+  type AuditIssue, type AuditState, type DeckResult, type Me,
 } from './api.ts';
 
 /* ── Константы композиции ── */
@@ -188,6 +190,17 @@ export default function Configurator() {
   const [deckAt, setDeckAt] = useState(0);                      // какой шаблон смотрим
   const [variantAt, setVariantAt] = useState(0);                // какой вариант колоды
   const [genError, setGenError] = useState<string | null>(null);
+  const [deckId, setDeckId] = useState<string | null>(null);
+  /* аудит текущего варианта: панель справа от холста */
+  const [auditOpen, setAuditOpen] = useState(false);
+  const [audit, setAudit] = useState<AuditState | null>(null);
+  const [auditBusy, setAuditBusy] = useState<'load' | 'ctx' | 'fix' | null>(null);
+  const [auditError, setAuditError] = useState<string | null>(null);
+  const [auditNote, setAuditNote] = useState<string | null>(null);
+  const [focus, setFocus] = useState<string | null>(null);      // находка, обведённая на холсте
+  const frameRef = useRef<HTMLDivElement>(null);
+  const [fitBox, setFitBox] = useState<{ w: number; h: number } | null>(null);   // слайд, вписанный в холст
+  const [ratio, setRatio] = useState(16 / 9);
   // куда тянется анимация генерации: прогресс и фраза приходят событиями с сервера
   const genTarget = useRef({ progress: 0, message: '' });
 
@@ -424,6 +437,8 @@ export default function Configurator() {
     try {
       const id = await createDeck(prompt.trim(), ready.map((t) => t.id!),
         img.filter((i) => i.state === 'ok' && i.id).map((i) => i.id!));
+      setDeckId(id);
+      setAudit(null);
       const result = await followDeck(id, (e) => {
         genTarget.current = { progress: e.progress, message: e.message ?? genTarget.current.message };
       });
@@ -484,6 +499,20 @@ export default function Configurator() {
 
   /* ══════════ Аккаунт ══════════ */
   useEffect(() => { fetchMe().then(setMe); }, []);
+
+  /* configurator.html?deck=<id> — открыть уже готовую колоду сразу в демонстрации */
+  useEffect(() => {
+    const q = new URLSearchParams(location.search);
+    const id = q.get('deck');
+    if (!id) return;
+    fetchDeck(id).then((result) => {
+      if (!result) return;
+      const at = clamp(Number(q.get('tpl') ?? 0) || 0, 0, result.decks.length - 1);
+      setDeck(result); setDeckId(id); setDeckAt(at); setVariantAt(clamp((Number(q.get('v')) || 1) - 1, 0, 2));
+      setSlide(0); setNavAt(1); setView('show');
+      if (q.get('audit') === '1') setAuditOpen(true);     // ссылка сразу на панель аудита
+    });
+  }, []);
 
   const onAccCta = async () => {
     if (!me) { location.href = 'authorize.html?next=configurator.html'; return; }
@@ -564,6 +593,99 @@ export default function Configurator() {
 
   const byTemplate = deck ? deck.decks[deckAt] : null;
   const current = byTemplate ? byTemplate.variants[Math.min(variantAt, byTemplate.variants.length - 1)] : null;
+
+  /* ══════════ Аудит ══════════
+     Находки грузятся для варианта, который открыт; после исправления у варианта новые превью,
+     файлы и сводка — подменяем их в результате генерации. */
+  const auditKey = deckId && byTemplate && current ? `${deckId}/${byTemplate.template_id}/${current.variant}` : null;
+
+  useEffect(() => {
+    if (!auditOpen || !auditKey || !byTemplate || !current) return;
+    let alive = true;
+    setAuditBusy('load'); setAuditError(null); setAuditNote(null); setFocus(null);
+    fetchAudit(deckId!, byTemplate.template_id, current.variant)
+      .then((a) => { if (alive) setAudit(a); })
+      .catch((e: Error) => { if (alive) { setAudit(null); setAuditError(e.message); } })
+      .finally(() => { if (alive) setAuditBusy(null); });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auditOpen, auditKey]);
+
+  const patchVariant = (a: AuditState) => {
+    setDeck((d) => d && {
+      ...d,
+      decks: d.decks.map((t, ti) => ti !== deckAt ? t : {
+        ...t,
+        variants: t.variants.map((v) => v.variant !== current!.variant ? v : {
+          ...v, slides: a.slides, pptx: a.pptx, pdf: a.pdf, html: a.html, audit: a.summary,
+        }),
+      }),
+    });
+    setSlide((i) => Math.min(i, Math.max(a.slides.length - 1, 0)));
+  };
+
+  const onContextual = async () => {
+    if (!deckId || !byTemplate || !current) return;
+    setAuditBusy('ctx'); setAuditError(null); setAuditNote(null);
+    try {
+      const a = await runContextualAudit(deckId, byTemplate.template_id, current.variant);
+      setAudit(a);
+      patchVariant(a);
+      const n = a.issues.filter((i) => i.mode === 'contextual').length;
+      setAuditNote(n ? `модель нашла ${n} ${plural(n, 'замечание', 'замечания', 'замечаний')} по смыслу`
+        : 'по смыслу замечаний нет');
+    } catch (e) {
+      setAuditError((e as Error).message);
+    } finally {
+      setAuditBusy(null);
+    }
+  };
+
+  const onFix = async (choices: { issue: string; fix: string }[]) => {
+    if (!deckId || !byTemplate || !current) return;
+    setAuditBusy('fix'); setAuditError(null); setAuditNote(null); setFocus(null);
+    try {
+      const a = await applyAuditFixes(deckId, byTemplate.template_id, current.variant, choices);
+      setAudit(a);
+      patchVariant(a);
+      const ok = a.result?.applied.length ?? 0;
+      const failed = Object.values(a.result?.failed ?? {});
+      setAuditNote(`исправлено: ${ok}` + (failed.length ? ` · не вышло: ${failed.length} — ${failed[0]}` : ''));
+    } catch (e) {
+      setAuditError((e as Error).message);
+    } finally {
+      setAuditBusy(null);
+    }
+  };
+
+  const onPick = (issue: AuditIssue) => {
+    if (issue.slide >= 1) setSlide(issue.slide - 1);
+    setFocus(issue.id);
+  };
+
+  /* слайд вписывается в холст с сохранением пропорций — рамки находок кладутся поверх в долях слайда */
+  useLayoutEffect(() => {
+    const frame = frameRef.current;
+    if (!frame) return;
+    const measure = () => {
+      const fw = frame.clientWidth, fh = frame.clientHeight;
+      const w = Math.min(fw, fh * ratio);
+      setFitBox({ w, h: w / ratio });
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(frame);
+    return () => ro.disconnect();
+  }, [ratio, view, current]);
+
+  const slideIssues = (audit?.issues ?? []).filter((i) => i.slide === slide + 1 && i.box);
+  const focusIssue = (audit?.issues ?? []).find((i) => i.id === focus) ?? null;
+  const perSlide = (audit?.issues ?? []).reduce<Record<number, 'error' | 'warning'>>((acc, i) => {
+    if (acc[i.slide] !== 'error') acc[i.slide] = i.severity;
+    return acc;
+  }, {});
+  const auditCount = audit ? audit.summary.errors + audit.summary.warnings
+    : (current?.audit ? current.audit.errors + current.audit.warnings : null);
 
   /* стрелки листают слайды в демонстрации */
   useEffect(() => {
@@ -700,13 +822,8 @@ export default function Configurator() {
               {/* ── Состояние 2: генерация ── */}
               <div className={`view view--gen${view === 'gen' ? ' is-on' : ''}`}>
                 <div className="pane pane--gen">
-<<<<<<< HEAD
-                  <div className="gen">
-                    <div className="gen__logo" ref={genLogoRef} role="img" aria-label="ЦДС" />
-=======
                   <div className={genError ? 'gen is-err' : 'gen'}>
-                    <div className="gen__logo" ref={genLogoRef}>ЦДС</div>
->>>>>>> a2270c6 (backnd v0.4)
+                    <div className="gen__logo" ref={genLogoRef} role="img" aria-label="ЦДС" />
                     <div className="gen__word">
                       <span ref={genWordRef} />
                       <i className="gen__caret" ref={genCaretRef} />
@@ -723,7 +840,7 @@ export default function Configurator() {
               </div>
 
               {/* ── Состояние 3: демонстрация ── */}
-              <div className={`view view--show${view === 'show' ? ' is-on' : ''}`}>
+              <div className={`view view--show${view === 'show' ? ' is-on' : ''}${auditOpen && current ? ' is-audit' : ''}`}>
                 {current ? (
                   <>
                     <div className="rail rail--real" aria-label="Слайды">
@@ -733,17 +850,36 @@ export default function Configurator() {
                           type="button"
                           className={i === slide ? 'thumb thumb--real is-on' : 'thumb thumb--real'}
                           aria-label={`Слайд ${i + 1}`}
-                          onClick={() => setSlide(i)}
+                          onClick={() => { setSlide(i); setFocus(null); }}
                         >
                           <img src={src} alt="" loading="lazy" />
                           <span className="thumb__n">{i + 1}</span>
+                          {auditOpen && perSlide[i + 1] && <i className={`thumb__flag thumb__flag--${perSlide[i + 1]}`} />}
                         </button>
                       ))}
                     </div>
                     <div className="canvas canvas--real">
-                      {current.slides[slide]
-                        ? <img className="canvas__img" src={current.slides[slide]} alt={`Слайд ${slide + 1}`} />
-                        : <p className="canvas__msg">{current.render_error ?? 'превью не готово'}</p>}
+                      {current.slides[slide] ? (
+                        <div className="canvas__frame" ref={frameRef}>
+                          <div className={auditOpen && focusIssue && !focusIssue.box && focusIssue.slide === slide + 1
+                                 ? 'canvas__slide is-flag' : 'canvas__slide'}
+                               style={fitBox ? { width: fitBox.w, height: fitBox.h } : undefined}>
+                            <img key={current.slides[slide]} className="canvas__img" src={current.slides[slide]}
+                                 alt={`Слайд ${slide + 1}`}
+                                 onLoad={(e) => {
+                                   const im = e.currentTarget;
+                                   if (im.naturalWidth && im.naturalHeight) setRatio(im.naturalWidth / im.naturalHeight);
+                                 }} />
+                            {auditOpen && slideIssues.map((i) => (
+                              <button key={i.id} type="button" aria-label={i.message}
+                                      className={`canvas__mark canvas__mark--${i.severity}${focus === i.id ? ' is-focus' : ''}`}
+                                      style={{ left: `${i.box![0] * 100}%`, top: `${i.box![1] * 100}%`,
+                                               width: `${i.box![2] * 100}%`, height: `${i.box![3] * 100}%` }}
+                                      title={i.message} onClick={() => setFocus(i.id)} />
+                            ))}
+                          </div>
+                        </div>
+                      ) : <p className="canvas__msg">{current.render_error ?? 'превью не готово'}</p>}
                       <div className="show-bar">
                         {deck!.decks.length > 1 && (
                           <div className="show-bar__tabs" role="tablist" aria-label="Шаблон">
@@ -751,7 +887,7 @@ export default function Configurator() {
                               <button key={d.template_id} type="button" role="tab" aria-selected={i === deckAt}
                                       className={i === deckAt ? 'chip is-on' : 'chip'}
                                       onClick={() => { setDeckAt(i); setSlide(0); }} title={d.name}>
-                                {d.name.replace(/\.(pptx|potx|pdf|html?)$/i, '')}
+                                {d.name.replace(/\.(pptx|potx)$/i, '')}
                               </button>
                             ))}
                           </div>
@@ -767,12 +903,22 @@ export default function Configurator() {
                           ))}
                         </div>
                         <span className="show-bar__count">{slide + 1} / {current.slides.length}</span>
+                        <button type="button" className={auditOpen ? 'chip chip--audit is-on' : 'chip chip--audit'}
+                                aria-pressed={auditOpen} onClick={() => { setAuditOpen((o) => !o); setFocus(null); }}
+                                title="Проверки вёрстки, шаблона, плотности и смысла; исправления на выбор">
+                          Аудит{auditCount !== null ? ` · ${auditCount}` : ''}
+                        </button>
                         <div className="show-bar__export">
                           {current.pptx && <a className="chip chip--go" href={current.pptx} download>PPTX</a>}
                           {current.pdf && <a className="chip chip--go" href={current.pdf} download>PDF</a>}
+                          {current.html && <a className="chip chip--go" href={current.html} download>HTML</a>}
                         </div>
                       </div>
                     </div>
+                    {auditOpen && (
+                      <AuditPanel audit={audit} busy={auditBusy} error={auditError} note={auditNote} slide={slide}
+                                  focus={focus} onPick={onPick} onContextual={onContextual} onFix={onFix} />
+                    )}
                   </>
                 ) : (
                   <>

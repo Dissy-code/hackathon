@@ -30,12 +30,27 @@ roles:
   outline_planner: { model: text,   think: false, temperature: 0.4, max_tokens: 4000 }
   # пачке из 4 слайдов хватает ~1500 токенов; лимит с запасом, но обрывает зацикливание быстро
   slide_writer:    { model: text,   temperature: 0.5, max_tokens: 3500 }
-  shorten:         { model: text,   temperature: 0.3, max_tokens: 1024 }
-  fix_agent:       { model: text,   temperature: 0.3 }
-  research:        { model: text,   temperature: 0.3 }
+  shorten:         { model: text,   temperature: 0.3, max_tokens: 1500 }
+  fix_agent:       { model: text,   temperature: 0.3, max_tokens: 2500 }
+  research:        { model: text,   temperature: 0.3, max_tokens: 3000 }
   template_classifier: { model: text, temperature: 0.2, max_tokens: 8192 }
   layout_classify: { model: vision, temperature: 0.2 }
-  audit_vlm:       { model: vision, temperature: 0.2 }
+  audit_vlm:       { model: vision, temperature: 0.2, max_tokens: 1200 }
+
+# MCP-серверы — инструменты агентов графа (streamable HTTP). Пустой адрес — сервер не используется.
+#   web  — поиск через self-hosted SearXNG и чтение страниц (prism/mcp/web_server.py)
+#   pptx — разбор шаблонов, осмотр, правка и рендер слайдов (prism/mcp/pptx_server.py)
+mcp:
+  web: ${MCP_WEB_URL:-}
+  pptx: ${MCP_PPTX_URL:-}
+
+# Короткий бриф — модель сама ищет материалы в интернете через MCP web.
+research:
+  min_brief_words: 60
+  max_queries: 3
+  max_pages: 4
+  page_chars: 6000
+  budget_s: 60
 
 # Закреплённые версии скиллов (skills/<name>/v<N>.yaml). Не указан — берётся последняя.
 skills: {}

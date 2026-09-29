@@ -59,3 +59,12 @@ def test_generate_via_api(client, deck):
     assert client.get(d["slides"][0]).headers["content-type"] == "image/png"
     # выход за пределы каталога колоды не отдаётся
     assert client.get(f"/api/decks/{deck_id}/files/../../prism.db").status_code == 404
+
+    # панель аудита: находки уже посчитаны пайплайном, неизвестная находка — 400
+    v = deck["variants"][0]
+    assert "errors" in v["audit"]
+    audit = client.get(f"/api/decks/{deck_id}/audit/{tid}/1").json()
+    assert audit["rev"] == 0 and len(audit["slides"]) == 3 and isinstance(audit["issues"], list)
+    bad = client.post(f"/api/decks/{deck_id}/audit/{tid}/1/fix", json={"fixes": [{"issue": "nope", "fix": "clamp"}]})
+    assert bad.status_code == 400
+    assert client.get(f"/api/decks/{deck_id}/audit/{tid}/9").status_code == 404

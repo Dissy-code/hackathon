@@ -5,6 +5,7 @@
     GET  /api/decks/{id}/events         SSE: прогресс {stage, message, progress}, в конце {stage: "done"|"error"}
     GET  /api/decks/{id}                статус и результат: по колоде на шаблон — превью, pptx, pdf, предупреждения
     GET  /api/decks/{id}/files/{path}   файлы колоды (pptx, pdf, png)
+    аудит варианта — app/audit.py
 
 Задача живёт в процессе (asyncio): для хакатона этого достаточно, состояние дублируется на диск.
 """
@@ -27,6 +28,7 @@ from app.templates import UPLOADS, load_spec
 from prism.config import BACKEND_DIR
 from prism.generation.pipeline import detect_language, run
 from prism.llm.fake import FakeLLMFactory
+from prism.llm.structured import ProviderError
 from prism.parsing.spec import SPECS_DIR
 
 router = APIRouter(prefix="/api", tags=["decks"])
@@ -122,27 +124,30 @@ def _public_result(deck_id: str, final: dict) -> dict:
             "template_id": d["template_id"], "name": d["name"],
             "variants": [{
                 "variant": v["variant"], "label": v["label"],
-                "pptx": url(v["pptx"]), "pdf": url(v.get("pdf")),
+                "pptx": url(v["pptx"]), "pdf": url(v.get("pdf")), "html": url(v.get("html")),
                 "slides": [url(p) for p in v.get("previews", [])],
                 "warnings": [{"slide": r["index"], "text": w} for r in v["reports"] for w in r["warnings"]],
                 "render_error": v.get("render_error"),
+                "audit": v.get("audit"),
             } for v in d["variants"]],
         } for d in final.get("decks", [])],
         "warnings": final.get("warnings", []),
+        "sources": final.get("sources", []),
         "manifest": final.get("manifest", {}),
     }
 
 
-async def _run_job(job: Job, state: dict, llm, skills) -> None:
+async def _run_job(job: Job, state: dict, llm, skills, mcp=None, research_cfg=None) -> None:
     try:
-        final = await run(state, llm, skills, on_event=lambda e: _publish(job, e))
+        final = await run(state, llm, skills, on_event=lambda e: _publish(job, e), mcp=mcp,
+                          research_cfg=research_cfg)
         job.result = _public_result(job.id, final)
         (DECKS / job.id / "result.json").write_text(json.dumps(job.result, ensure_ascii=False, indent=1),
                                                     encoding="utf-8")
         job.status = "done"
         await _publish(job, {"stage": "done", "message": "готово", "progress": 1.0})
     except Exception as e:  # noqa: BLE001 — любая ошибка генерации должна дойти до интерфейса, а не потеряться
-        job.status, job.error = "error", f"{type(e).__name__}: {e}"
+        job.status, job.error = "error", str(e) if isinstance(e, ProviderError) else f"{type(e).__name__}: {e}"
         await _publish(job, {"stage": "error", "message": job.error, "progress": 1.0})
 
 
@@ -177,7 +182,9 @@ async def create_deck(body: DeckRequest, request: Request, db: Db, user: Optiona
     llm = app.state.llm
     if getattr(llm, "fake", False):                 # демо-режим: заготовка по теме из промпта
         llm = FakeLLMFactory(body.prompt)
-    job.task = asyncio.create_task(_run_job(job, state, llm, app.state.skills))
+    fake = getattr(llm, "fake", False)             # в демо-режиме в интернет не ходим
+    job.task = asyncio.create_task(_run_job(job, state, llm, app.state.skills, None if fake else app.state.mcp,
+                                            app.state.config.research))
     return DeckCreated(id=deck_id)
 
 
@@ -226,5 +233,5 @@ async def deck_file(deck_id: str, path: str) -> FileResponse:
     target = (base / path).resolve()
     if not deck_id.isalnum() or base not in target.parents or not target.is_file():
         raise HTTPException(404, "Файл не найден")
-    names = {".pptx": "presentation.pptx", ".pdf": "presentation.pdf"}
+    names = {".pptx": "presentation.pptx", ".pdf": "presentation.pdf", ".html": "presentation.html"}
     return FileResponse(target, filename=names.get(target.suffix))

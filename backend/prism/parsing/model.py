@@ -75,6 +75,9 @@ class ImageRef(BaseModel):
     px_h: int | None = None
     avg_color: str | None = None       # средний цвет непрозрачных пикселей — для контраста текста поверх
     opaque_ratio: float | None = None  # доля непрозрачных пикселей: иконки/вырезанные объекты << 1
+    # «детальность» картинки сеткой DETAIL×DETAIL: разброс яркости в клетке (0…1). Ровный фон ≈ 0, нарисованные
+    # в картинке карточки и цифры — заметно больше. Только для крупных картинок (фон слайда/макета).
+    detail: list[list[float]] | None = None
 
 
 class Shape(BaseModel):

@@ -319,6 +319,7 @@ def find_groups(shapes: list[Shape], raw: TemplateRaw, slide: SlideRaw, tokens: 
     for items in groups_members:
         _extend_by_pitch(items, free, used, tol)
         _fill_gaps(items, free, used, tol)
+        _attach_by_plates(items, free, used, kinds, raw.slide_w * raw.slide_h)
 
     groups = []
     for items in groups_members:
@@ -408,6 +409,40 @@ def _fill_gaps(items: list[list[Shape]], free: list[Shape], used: set[int], tol:
                         break
 
 
+def _attach_by_plates(items: list[list[Shape]], free: list[Shape], used: set[int], kinds: dict[int, SlotKind],
+                      slide_area: int) -> None:
+    """Колонки на подложках разного цвета («Сейчас» белая, «К концу года» сиреневая): стили подписей в них
+    разные, и в дорожку попал только заголовок. Если у каждой карточки своя подложка и на подложках лежит
+    одинаковый набор свободных полей — это части карточек, вместе с самой подложкой."""
+    if len(items) < 2:
+        return
+    plates = [s for s in free if s.id not in used and kinds.get(s.id) == SlotKind.surface
+              and s.bbox.area <= MAX_CANDIDATE_AREA * slide_area]
+
+    def inside(b: BBox, outer: BBox) -> bool:
+        cx, cy = _center(b)
+        return outer.x <= cx <= outer.right and outer.y <= cy <= outer.bottom
+
+    chosen = []
+    for it in items:
+        box = _union([s.bbox for s in it])
+        holders = [p for p in plates if inside(box, p.bbox) and p.bbox.area >= box.area]
+        if not holders:
+            return
+        chosen.append(min(holders, key=lambda p: p.bbox.area))
+    if len({p.id for p in chosen}) != len(chosen):
+        return
+    extra = [sorted((s for s in free if s.id not in used and s.id not in {p.id for p in chosen}
+                     and kinds.get(s.id) not in (None, SlotKind.surface) and inside(s.bbox, plate.bbox)),
+                    key=lambda s: (s.bbox.y, s.bbox.x)) for plate in chosen]
+    shapes = [[kinds[s.id] for s in ex] for ex in extra]
+    if not extra[0] or any(sh != shapes[0] for sh in shapes):
+        return
+    for it, plate, ex in zip(items, chosen, extra, strict=True):
+        it.extend(ex + [plate])
+        used.update(s.id for s in ex + [plate])
+
+
 def _layout_shapes(raw: TemplateRaw, slide: SlideRaw) -> list[Shape]:
     layout = next((lay for lay in raw.layouts if lay.name == slide.layout and lay.master == slide.master), None)
     return layout.shapes if layout else []
@@ -421,7 +456,40 @@ def _drawn_in_layout(boxes: list[BBox], raw: TemplateRaw, slide: SlideRaw) -> bo
     visuals = [s.bbox for s in layout.shapes
                if not s.placeholder and s.kind in (ShapeKind.picture, ShapeKind.shape, ShapeKind.text)]
     hits = sum(1 for b in boxes if any(intersection(b, v) >= 0.5 * b.area and v.area <= 4 * b.area for v in visuals))
-    return len(boxes) > 1 and hits >= len(boxes) / 2
+    # или в каждой карточке стоит что-то из макета: крупные «01…04», значок — убрать их со слайда нельзя
+    marks = sum(1 for b in boxes if any(b.x <= v.x + v.w / 2 <= b.right and b.y <= v.y + v.h / 2 <= b.bottom
+                                        and v.area <= b.area for v in visuals))
+    return len(boxes) > 1 and (hits >= len(boxes) / 2 or marks == len(boxes)
+                               or _drawn_in_backdrop(boxes, layout.shapes, raw))
+
+
+def _cells(b: BBox, pic: BBox, n: int) -> list[tuple[int, int]]:
+    x0 = int((b.x - pic.x) / pic.w * n)
+    x1 = int((b.right - pic.x) / pic.w * n - 1e-9)
+    y0 = int((b.y - pic.y) / pic.h * n)
+    y1 = int((b.bottom - pic.y) / pic.h * n - 1e-9)
+    return [(cx, cy) for cy in range(max(y0, 0), min(y1, n - 1) + 1) for cx in range(max(x0, 0), min(x1, n - 1) + 1)]
+
+
+def _drawn_in_backdrop(boxes: list[BBox], shapes: list[Shape], raw: TemplateRaw) -> bool:
+    """Карточки нарисованы прямо в картинке-фоне макета (плашки и «01…04» — пиксели, а не фигуры):
+    в каждой карточке картинка заметно «детальнее», чем вне карточек."""
+    slide_area = raw.slide_w * raw.slide_h
+    for s in shapes:
+        img = s.image
+        if s.kind != ShapeKind.picture or img is None or not img.detail or s.bbox.area < 0.8 * slide_area:
+            continue
+        n = len(img.detail)
+        inside = {c for b in boxes for c in _cells(b, s.bbox, n)}
+        top = min(b.y for b in boxes)
+        outside = [img.detail[cy][cx] for cx, cy in _cells(BBox(x=0, y=top, w=raw.slide_w, h=raw.slide_h - top), s.bbox, n)
+                   if (cx, cy) not in inside]
+        base = median(outside) if outside else 0.0
+        # фон ровный, а в каждой карточке есть «рисунок» (цифра, плашка, иконка) — максимум по клеткам
+        per_box = [max((img.detail[cy][cx] for cx, cy in _cells(b, s.bbox, n)), default=0.0) for b in boxes]
+        if base < 0.01 and all(v >= 0.025 for v in per_box):
+            return True
+    return False
 
 
 # ── паттерн слайда ─────────────────────────────────────────────────────────

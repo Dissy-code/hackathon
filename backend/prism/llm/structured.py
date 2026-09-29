@@ -25,6 +25,18 @@ class StructuredOutputError(RuntimeError):
         self.last_raw = last_raw
 
 
+class ProviderError(RuntimeError):
+    """Провайдер отказал по ключу: неверный ключ, нет доступа, кончился баланс или лимит трат.
+    Повторять бессмысленно — генерация останавливается с понятным сообщением."""
+
+
+_PROVIDER_REASONS = {
+    401: "провайдер модели не принял ключ (LLM_API_KEY) — проверьте ключ в backend/.env",
+    402: "у ключа провайдера модели закончился баланс или лимит трат — пополните баланс или поднимите лимит",
+    403: "у ключа нет доступа к модели — проверьте LLM_MODEL и права ключа",
+}
+
+
 def _extract_json(text: str) -> str:
     text = strip_think(text)
     if text.startswith("```"):
@@ -85,6 +97,11 @@ async def ainvoke_structured[T: BaseModel](
             # провайдер не поддерживает response_format — запоминаем и повторяем со схемой в промпте
             _NO_RESPONSE_FORMAT.add(_model_key(model))
             return await ainvoke_structured(model, messages, schema, retries=retries, use_json_schema=False)
+        except openai.APIStatusError as e:
+            if e.status_code in _PROVIDER_REASONS:
+                raise ProviderError(f"{_PROVIDER_REASONS[e.status_code]} (HTTP {e.status_code})") from e
+            last_error = f"{type(e).__name__}: {e}"
+            continue
         except (openai.APIError, TimeoutError) as e:
             # сеть, 5xx, таймаут: для вызывающего это такая же неудача, как невалидный ответ
             last_error = f"{type(e).__name__}: {e}"

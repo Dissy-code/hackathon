@@ -253,6 +253,25 @@ def _kind(el: etree._Element, has_text: bool) -> tuple[ShapeKind, str | None]:
 _R_EMBED = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}embed"
 
 
+DETAIL = 16
+
+
+def _detail_grid(im: Image.Image) -> list[list[float]]:
+    """Разброс яркости по клеткам сетки DETAIL×DETAIL (строки сверху вниз)."""
+    cell = 12
+    gray = im.convert("L").resize((DETAIL * cell, DETAIL * cell))
+    px = gray.load()
+    grid = []
+    for gy in range(DETAIL):
+        row = []
+        for gx in range(DETAIL):
+            vals = [px[gx * cell + x, gy * cell + y] for y in range(cell) for x in range(cell)]
+            mean = sum(vals) / len(vals)
+            row.append(round((sum((v - mean) ** 2 for v in vals) / len(vals)) ** 0.5 / 255, 3))
+        grid.append(row)
+    return grid
+
+
 def _image_ref(el: etree._Element, part, cache: dict[str, ImageRef]) -> ImageRef | None:
     """Картинка из pic или blipFill фигуры/фона: хеш, размер, средний цвет, доля непрозрачного."""
     blip = el.find(".//a:blip", NS)
@@ -277,6 +296,8 @@ def _image_ref(el: etree._Element, part, cache: dict[str, ImageRef]) -> ImageRef
             ref.opaque_ratio = round(len(opaque) / 1024, 3)
             if opaque:
                 ref.avg_color = "".join(f"{sum(c[i] for c in opaque) // len(opaque):02X}" for i in range(3))
+            if im.size[0] >= 600:
+                ref.detail = _detail_grid(im)
     except (OSError, ValueError):  # EMF/WMF и прочее, что Pillow не открывает
         pass
     cache[sha1] = ref

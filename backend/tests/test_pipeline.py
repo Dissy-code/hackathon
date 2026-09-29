@@ -71,13 +71,16 @@ def test_pipeline_end_to_end(deck, tmp_path):
 
     final = asyncio.run(run(state, FakeFactory(), SkillRegistry(), on_event=collect))
     stages = [e["stage"] for e in events]
-    assert stages[0] == "plan" and stages[-1] == "render"
+    assert stages[0] == "plan" and stages[-1] == "audit"
     assert events[-1]["progress"] == 1.0
     [result] = final["decks"]
     assert [v["variant"] for v in result["variants"]] == [1, 2, 3]
     for v in result["variants"]:
         assert (tmp_path / tid / f"v{v['variant']}" / "deck.pptx").exists()
-        assert len(v["previews"]) == 3 and v["pdf"].endswith(".pdf")
+        assert len(v["previews"]) == 3 and v["pdf"].endswith(".pdf") and v["html"].endswith(".html")
+        # аудит — часть пайплайна: у каждого варианта есть audit.json и сводка
+        assert (tmp_path / tid / f"v{v['variant']}" / "audit.json").exists() and "errors" in v["audit"]
+    assert (tmp_path / "context.json").exists()
     assert [r["kind"] for r in result["variants"][0]["reports"]] == ["title", "cards", "process"]
     skills = [s["skill"] for s in final["manifest"]["skills"]]
     assert any(s.startswith("outline_planner@") for s in skills) and any(s.startswith("slide_writer@") for s in skills)

@@ -21,8 +21,7 @@ router = APIRouter(prefix="/api/templates", tags=["templates"])
 
 UPLOADS = BACKEND_DIR / "data" / "uploads"
 MAX_BYTES = 150 * 1024 * 1024
-SUPPORTED = {".pptx", ".potx"}
-PLANNED = {".pdf", ".html", ".htm"}      # принимаем в интерфейсе, разбор — следующий шаг
+SUPPORTED = {".pptx", ".potx"}          # шаблон — только PowerPoint: из PDF/HTML не восстановить макеты и стили
 
 
 class TemplateSummary(BaseModel):
@@ -72,8 +71,6 @@ def _meta_path(template_id: str) -> Path:
 async def upload_template(file: UploadFile, db: Db, user: OptionalUser) -> TemplateSummary:
     name = Path(file.filename or "template").name
     ext = Path(name).suffix.lower()
-    if ext in PLANNED:
-        raise HTTPException(415, f"Шаблоны {ext} появятся в ближайшем обновлении, пока — .pptx и .potx")
     if ext not in SUPPORTED:
         raise HTTPException(415, f"Формат {ext or 'без расширения'} не поддерживается: нужен .pptx или .potx")
 

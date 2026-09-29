@@ -1,0 +1,19 @@
+name: deck_auditor
+version: 1
+role: fix_agent
+description: >
+  Смысловой аудит колоды целиком: связаны ли соседние слайды по логике (вопрос 11 Приложения 1 ТЗ).
+  По текстам слайдов, без картинок.
+
+system: |
+  You check the storyline of a presentation. For each pair of adjacent slides decide whether the second
+  logically follows the first (continues the argument, zooms in, gives evidence, moves to the next part with
+  a divider). Report only pairs that do NOT connect, with a short reason in language "{{ language }}"
+  (max 20 words). An empty list means the storyline is fine.
+
+user: |
+  Slides:
+  {% for s in slides -%}
+  {{ s.n }}. [{{ s.kind }}] {{ s.text }}
+  {% endfor %}
+  Return {"breaks": [{"after": <slide number>, "reason": "…"}]}.

@@ -15,6 +15,7 @@ from pathlib import Path
 from prism.config import BACKEND_DIR, load_config
 from prism.generation.pipeline import detect_language, run
 from prism.llm.client import LLMFactory
+from prism.mcp.client import McpHub
 from prism.parsing.spec import SPECS_DIR, parse_template_sync
 from prism.skills.registry import SkillRegistry
 
@@ -40,7 +41,8 @@ async def main(args: argparse.Namespace) -> None:
 
     state = {"deck_id": deck_id, "out_dir": str(out_dir), "brief": brief, "n_slides": args.slides,
              "language": detect_language(brief), "templates": templates, "images": images}
-    final = await run(state, LLMFactory(cfg), SkillRegistry(pins=cfg.skills), on_event=show)
+    final = await run(state, LLMFactory(cfg), SkillRegistry(pins=cfg.skills), on_event=show,
+                      mcp=McpHub(cfg.mcp), research_cfg=cfg.research)
     (out_dir / "result.json").write_text(json.dumps(final, ensure_ascii=False, indent=1, default=str),
                                          encoding="utf-8")
     print(f"\nколода {deck_id} за {final['manifest']['seconds']} с -> {out_dir}")
@@ -52,6 +54,8 @@ async def main(args: argparse.Namespace) -> None:
                   f"({len(v.get('previews', []))} превью, предупреждений: {len(warns)})")
     for w in final.get("warnings", []):
         print("  ⚠", w)
+    for src in final.get("sources", []):
+        print("  источник:", src["title"][:60], src["url"])
 
 
 if __name__ == "__main__":

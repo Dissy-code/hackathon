@@ -127,6 +127,20 @@ def no_wrap(el: etree._Element) -> bool:
     return body_pr is not None and body_pr.get("wrap") == "none"
 
 
+def alignment(el: etree._Element) -> str:
+    """Выравнивание первого абзаца: l | ctr | r | just…; "?" — наследуется от плейсхолдера макета."""
+    tx_body = el.find(qn("p:txBody"))
+    if tx_body is None:
+        return "?"
+    p_pr = tx_body.find(f"{qn('a:p')}/{qn('a:pPr')}")
+    if p_pr is not None and p_pr.get("algn"):
+        return p_pr.get("algn")
+    lvl = tx_body.find(f"{qn('a:lstStyle')}/{qn('a:lvl1pPr')}")
+    if lvl is not None and lvl.get("algn"):
+        return lvl.get("algn")
+    return "?" if el.find(f".//{qn('p:nvPr')}/{qn('p:ph')}") is not None else "l"
+
+
 def offset_shape(el: etree._Element, dx: int, dy: int) -> None:
     xfrm = shape_xfrm(el)
     off = xfrm.find(qn("a:off")) if xfrm is not None else None
@@ -259,6 +273,7 @@ def add_chart(slide: Slide, box: BBox, chart, colors: list[str], font: str | Non
     for s in chart.series:
         data.add_series(s.name, [float(v) for v in s.values[: len(chart.categories)]])
     frame = slide.shapes.add_chart(_CHART_TYPES[chart.type], Emu(box.x), Emu(box.y), Emu(box.w), Emu(box.h), data)
+    frame.name = "prism:chart"
     c = frame.chart
     c.font.size = Pt(size_pt)
     c.font.color.rgb = RGBColor.from_string(text_color)
@@ -292,6 +307,9 @@ def add_chart(slide: Slide, box: BBox, chart, colors: list[str], font: str | Non
         value_axis.major_gridlines.format.line.color.rgb = RGBColor.from_string(text_color)
         value_axis.major_gridlines.format.line.width = Pt(0.25)
         value_axis.format.line.fill.background()
+        values = [float(v) for s in chart.series for v in s.values]
+        if chart.type in ("column", "bar") and values and min(values) >= 0:
+            value_axis.minimum_scale = 0      # столбцы от нуля: иначе 94 против 89 выглядит как «вдвое»
         if chart.unit:
             value_axis.has_title = True
             value_axis.axis_title.text_frame.text = chart.unit
@@ -302,6 +320,7 @@ def add_table(slide: Slide, box: BBox, table, header_fill: str, header_text: str
               font: str | None, size_pt: float, stripe: str | None) -> None:
     rows, cols = len(table.rows) + 1, len(table.columns)
     frame = slide.shapes.add_table(rows, cols, Emu(box.x), Emu(box.y), Emu(box.w), Emu(box.h))
+    frame.name = "prism:table"
     tbl = frame.table
     tbl.first_row = True
     for r in range(rows):

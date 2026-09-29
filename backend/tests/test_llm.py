@@ -68,3 +68,33 @@ async def test_structured_gives_up():
     with pytest.raises(StructuredOutputError) as e:
         await ainvoke_structured(model, [HumanMessage("точка")], Point, retries=1)
     assert e.value.last_raw == "всё ещё нет"
+
+
+def test_spend_limit_stops_immediately_with_readable_message():
+    import asyncio
+
+    import httpx
+    import openai
+    import pytest
+    from langchain_core.messages import HumanMessage
+    from pydantic import BaseModel
+
+    from prism.llm.structured import ProviderError, ainvoke_structured
+
+    class Out(BaseModel):
+        x: int
+
+    calls = []
+
+    class Broke:
+        def bind(self, **_):
+            return self
+
+        async def ainvoke(self, _):
+            calls.append(1)
+            req = httpx.Request("POST", "http://llm/v1/chat/completions")
+            raise openai.APIStatusError("limit", response=httpx.Response(402, request=req), body=None)
+
+    with pytest.raises(ProviderError, match="баланс"):
+        asyncio.run(ainvoke_structured(Broke(), [HumanMessage("hi")], Out, retries=3))
+    assert len(calls) == 1                          # не долбим провайдера повторами

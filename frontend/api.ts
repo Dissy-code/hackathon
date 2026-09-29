@@ -4,7 +4,7 @@
    на одном сервере — поэтому пути относительные.
    ───────────────────────────────────────────────────────────── */
 
-export const TPL_ACCEPT = '.pptx,.potx,.pdf,.html,.htm';
+export const TPL_ACCEPT = '.pptx,.potx';   // шаблоны — только PowerPoint
 
 export type TemplateSummary = {
   id: string;
@@ -91,15 +91,22 @@ export type DeckVariant = {
   label: string;
   pptx: string | null;
   pdf: string | null;
+  html?: string | null;
   slides: string[];
   warnings: { slide: number; text: string }[];
   render_error: string | null;
+  audit?: { errors: number; warnings: number } | null;
 };
 
 /* Колода по одному шаблону — три варианта. */
 export type DeckByTemplate = { template_id: string; name: string; variants: DeckVariant[] };
 
-export type DeckResult = { outline: Record<string, string[]>; decks: DeckByTemplate[]; warnings: string[] };
+export type DeckResult = {
+  outline: Record<string, string[]>;
+  decks: DeckByTemplate[];
+  warnings: string[];
+  sources?: { id: string; title: string; url: string }[];
+};
 
 export async function createDeck(prompt: string, templateIds: string[], imageIds: string[]): Promise<string> {
   let r: Response;
@@ -114,6 +121,14 @@ export async function createDeck(prompt: string, templateIds: string[], imageIds
   }
   if (!r.ok) return fail(r);
   return (await r.json()).id;
+}
+
+/* Готовая колода по id — открыть по ссылке ?deck=… (история, повторный просмотр). */
+export async function fetchDeck(id: string): Promise<DeckResult | null> {
+  const r = await fetch(`/api/decks/${encodeURIComponent(id)}`).catch(() => null);
+  if (!r || !r.ok) return null;
+  const body = await r.json();
+  return body.status === 'done' ? body.result : null;
 }
 
 /* SSE: onEvent на каждое событие; промис завершается на done (результат) или error (исключение). */
@@ -139,3 +154,58 @@ export function followDeck(id: string, onEvent: (e: DeckEvent) => void): Promise
     };
   });
 }
+
+/* ── Аудит ──
+   Детерминированные находки пайплайн считает сам; смысловую проверку моделью и исправления
+   запускает пользователь из панели. Исправление даёт новую ревизию файла (rev) — ссылки на превью
+   меняются вместе с ней, чтобы браузер не показывал старые картинки. */
+export type AuditFix = { id: string; label: string };
+export type AuditIssue = {
+  id: string;
+  slide: number;
+  shape_id: number | null;
+  check: string;
+  group: 'layout' | 'template' | 'density' | 'integrity' | 'content';
+  mode: 'deterministic' | 'contextual';
+  severity: 'error' | 'warning';
+  message: string;
+  box: [number, number, number, number] | null;
+  fixes: AuditFix[];
+};
+export type AuditState = {
+  rev: number;
+  issues: AuditIssue[];
+  contextual: 'none' | 'done' | 'stale' | 'error';
+  contextual_errors: string[];
+  summary: { errors: number; warnings: number };
+  slides: string[];
+  pptx: string;
+  pdf: string | null;
+  html: string | null;
+  result?: { applied: string[]; failed: Record<string, string>; deleted_slides: number[] };
+};
+
+async function auditCall(url: string, body?: unknown): Promise<AuditState> {
+  let r: Response;
+  try {
+    r = await fetch(url, body === undefined ? undefined : {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+  } catch {
+    throw new Error('сервер недоступен');
+  }
+  return r.ok ? r.json() : fail(r);
+}
+
+const auditUrl = (deckId: string, templateId: string, variant: number) =>
+  `/api/decks/${deckId}/audit/${templateId}/${variant}`;
+
+export const fetchAudit = (deckId: string, templateId: string, variant: number) =>
+  auditCall(auditUrl(deckId, templateId, variant));
+
+export const runContextualAudit = (deckId: string, templateId: string, variant: number) =>
+  auditCall(`${auditUrl(deckId, templateId, variant)}/contextual`, {});
+
+export const applyAuditFixes = (deckId: string, templateId: string, variant: number,
+  fixes: { issue: string; fix: string }[]) =>
+  auditCall(`${auditUrl(deckId, templateId, variant)}/fix`, { fixes });

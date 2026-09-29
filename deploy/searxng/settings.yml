@@ -1,0 +1,25 @@
+# SearXNG — self-hosted метапоисковик для узла research (через MCP-сервер web).
+# Наружу не публикуется: доступен только сервисам внутри docker-сети.
+use_default_settings: true
+
+general:
+  instance_name: "prism-search"
+
+server:
+  # секрет задаётся переменной SEARXNG_SECRET (docker-compose.yml), здесь — заглушка
+  secret_key: "overridden-by-SEARXNG_SECRET"
+  limiter: false          # внутренний сервис, запросы только от mcp-web; без limiter не нужен valkey
+  image_proxy: false
+  public_instance: false
+
+search:
+  safe_search: 1
+  autocomplete: ""
+  default_lang: "auto"
+  formats:
+    - html
+    - json                # MCP-сервер берёт выдачу в JSON
+
+outgoing:
+  request_timeout: 4.0
+  max_request_timeout: 8.0

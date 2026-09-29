@@ -22,9 +22,10 @@ variants:
     layout: visual
     slides: "12-14"
     planner: >
-      Visual deck: more slides, each carries one idea. Every number from the brief becomes a kpi or a chart
-      slide; sequences become process or timeline; parallel points become cards with at most 4 items.
-      Use at most one bullets slide. Add a section divider before each major part of the story.
+      Visual deck: more slides, each carries one idea. Numbers become kpi or chart slides: group 2-3 related
+      numbers on one kpi slide; a single-number kpi slide only for the 1-2 most important figures, never two in
+      a row. Sequences become process or timeline; parallel points become cards with at most 4 items.
+      Use at most one bullets slide. At most two section dividers in the whole deck, only before major parts.
     writer: >
       Very short texts: item headings max 3 words, item texts max 8 words, subtitles max 8 words.
       Prefer numbers over words wherever the brief has them.
