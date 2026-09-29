@@ -1,25 +1,11 @@
-# Prism — backend
+# ЦДС — backend (пакет `prism`)
 
 Сервис генерации презентаций по шаблону: парсинг → поиск материалов → генерация → вёрстка → аудит → экспорт.
 
-## Быстрый старт (docker compose)
+Запуск в Docker, переменные окружения и ограничения — в [корневом README](../README.md).
+Здесь — то, что нужно для разработки.
 
-```bash
-cp backend/.env.example backend/.env    # LLM_BASE_URL, LLM_API_KEY, LLM_MODEL, LLM_API_STYLE
-docker compose up -d --build            # из корня репозитория
-open http://localhost:8000
-```
-
-| Сервис | Что делает | Наружу |
-|---|---|---|
-| `backend` | API (FastAPI + LangGraph), фронтенд, рендер LibreOffice | `:8000` |
-| `mcp-web` | MCP-сервер поиска: `web_search` (SearXNG), `fetch_page` (основной текст страницы) | нет |
-| `mcp-pptx` | MCP-сервер pptx: `template_summary`, `inspect_deck`, `audit_deck`, `render_slide`, `set_shape_text` | нет |
-| `searxng` | self-hosted метапоисковик, выдача в JSON | нет |
-
-Шаблоны, колоды и база аккаунтов — в томе `prism-data`.
-
-## Установка без Docker
+## Установка для разработки
 
 ```bash
 cd backend
@@ -30,19 +16,6 @@ scripts/install_fonts.sh    # шрифты шаблонов (Play, Montserrat, C
 ```
 
 Для рендера превью и PDF нужен LibreOffice (`soffice`) и `pdftoppm` (poppler).
-
-## Переменные окружения
-
-| Переменная | Назначение |
-|---|---|
-| `LLM_BASE_URL` | Провайдер модели — любой OpenAI-совместимый API (для Open WebUI оканчивается на `/api`) |
-| `LLM_API_KEY` | Ключ провайдера |
-| `LLM_MODEL` | Модель для текста |
-| `LLM_VISION_MODEL` | Модель для картинок; пусто — та же, что `LLM_MODEL` |
-| `LLM_API_STYLE` | `vllm` / `openrouter` / `plain` — как передавать режим размышлений и `top_k` |
-| `MCP_WEB_URL` | MCP-сервер поиска (`http://mcp-web:8001/mcp` в compose); пусто — без поиска в интернете |
-| `MCP_PPTX_URL` | MCP-сервер pptx (`http://mcp-pptx:8002/mcp` в compose) |
-| `LLM_FAKE=1` | Демо-режим без провайдера: подставной текст, настоящие вёрстка и рендер |
 
 ## Аудит
 
@@ -94,7 +67,7 @@ pytest                                 # юнит-тесты (без сети)
 pytest -m live                         # тесты с реальной моделью
 ```
 
-## Ограничения
+## Особенности провайдеров
 
 - Режим размышлений включается и выключается через `chat_template_kwargs.enable_thinking`. Это работает
   на vLLM, llama.cpp и SGLang. У другого провайдера smoke-тест `thinking_toggle` покажет, работает ли он.

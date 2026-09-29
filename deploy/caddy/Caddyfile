@@ -1,0 +1,14 @@
+# HTTPS-прокси перед backend: сертификат Let's Encrypt выпускается сам, нужен DNS A-записью на VDS.
+{$DOMAIN} {
+	encode gzip
+	# генерация идёт до 5 минут, прогресс — SSE: не буферизуем и не рвём долгие ответы
+	reverse_proxy backend:8000 {
+		flush_interval -1
+		transport http {
+			read_timeout 10m
+		}
+	}
+	request_body {
+		max_size 60MB
+	}
+}

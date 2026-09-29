@@ -11,6 +11,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import os
 import re
 import secrets
 import sqlite3
@@ -69,6 +70,7 @@ def _open_session(db: sqlite3.Connection, response: Response, user_id: int, reme
                (_token_hash(token), user_id, expires.isoformat()))
     response.set_cookie(
         COOKIE, token, httponly=True, samesite="lax", path="/",
+        secure=os.environ.get("COOKIE_SECURE") == "1",      # за HTTPS (Caddy на VDS) — только по защищённому каналу
         # без «запомнить» — сессионная cookie браузера, пропадает с закрытием
         max_age=int(ttl.total_seconds()) if remember else None,
     )

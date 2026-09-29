@@ -27,8 +27,10 @@ services:
     environment:
       MCP_WEB_URL: http://mcp-web:8001/mcp
       MCP_PPTX_URL: http://mcp-pptx:8002/mcp
+      COOKIE_SECURE: ${COOKIE_SECURE:-0}
     ports:
-      - "${PRISM_PORT:-8000}:8000"
+      # на VDS за Caddy: PRISM_BIND=127.0.0.1 — наружу только 80/443 через прокси
+      - "${PRISM_BIND:-0.0.0.0}:${PRISM_PORT:-8000}:8000"
     volumes:
       - prism-data:/app/backend/data
     depends_on:
@@ -79,5 +81,22 @@ services:
     cap_drop: [ALL]
     cap_add: [CHOWN, SETGID, SETUID]
 
+  # HTTPS для VDS: docker compose --profile https up -d  (DOMAIN=cds.example.ru в .env рядом с compose)
+  caddy:
+    image: docker.io/library/caddy:2
+    profiles: ["https"]
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+    depends_on:
+      - backend
+
 volumes:
   prism-data:
+  caddy-data:
